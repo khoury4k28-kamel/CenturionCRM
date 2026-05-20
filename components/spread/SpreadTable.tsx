@@ -1,7 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
-import { toast } from "sonner";
+import { useState } from "react";
 import { Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SpreadCell } from "./SpreadCell";
@@ -11,9 +10,8 @@ import {
   COLUMN_LABELS,
   COLUMN_WIDTHS,
   COLUMN_ALIGN,
-  type ColumnId,
 } from "./types";
-import { useData } from "@/contexts/DataContext";
+import { DealCreateModal } from "@/components/deals/DealCreateModal";
 
 // Re-export the type for backward compat with `app/deals/page.tsx`.
 export type { SpreadDeal } from "./types";
@@ -119,61 +117,30 @@ function SpreadRow({ dealId }: { dealId: string }) {
   );
 }
 
-// ─── New-row inline adder (still uses fetch+router.refresh since this
-//     changes row membership, which the store can't predict locally) ────
+// ─── New-row trigger — opens DealCreateModal. The provider's addDeal()
+//     refreshes deals[] on success → SpreadStore re-keys → new row appears. ──
 
 function NewRow({ section }: { section: "ACTIVES" | "IN_ESCROW" }) {
-  const [value, setValue] = useState("");
-  const [pending, start] = useTransition();
-  const inputRef = useRef<HTMLInputElement>(null);
-  const { refresh } = useData();
-
-  function commit() {
-    const v = value.trim();
-    if (!v) return;
-    start(async () => {
-      // Goes through the spread-specific create path on the server (kind:"spread"
-      // creates a stub deal with property only). Then refresh() re-pulls the
-      // provider's deals[] so the new row appears and SpreadStore re-keys.
-      const res = await fetch(`/api/deals`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind: "spread", section, address: v }),
-      });
-      if (!res.ok) {
-        const { error } = await res.json().catch(() => ({ error: "Failed to add row" }));
-        toast.error(error ?? "Failed to add row");
-        return;
-      }
-      setValue("");
-      await refresh();
-      queueMicrotask(() => inputRef.current?.focus());
-    });
-  }
+  const [open, setOpen] = useState(false);
+  const label = `+ Add new ${section === "IN_ESCROW" ? "escrow" : "active"} property…`;
 
   return (
-    <tr className="border-b border-[var(--color-panel-border)] last:border-b-0">
-      <td className="px-1 py-1 text-center text-[var(--color-text-faint)]">
-        <Plus size={12} strokeWidth={1.5} />
-      </td>
-      <td colSpan={TOTAL_COLS - 1} className="px-1 py-1">
-        <input
-          ref={inputRef}
-          type="text"
-          value={value}
-          onChange={(e) => setValue(e.currentTarget.value)}
-          onBlur={commit}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              e.currentTarget.blur();
-            }
-          }}
-          placeholder={`+ Add new ${section === "IN_ESCROW" ? "escrow" : "active"} property…`}
-          disabled={pending}
-          className="w-full bg-transparent border-none outline-none px-2 py-1 text-xs text-[var(--color-text-faint)] placeholder-[var(--color-text-faint)] focus:text-[var(--color-text)] focus:bg-[var(--color-bg-hover)]"
-        />
-      </td>
-    </tr>
+    <>
+      <tr className="border-b border-[var(--color-panel-border)] last:border-b-0">
+        <td className="px-1 py-1 text-center text-[var(--color-text-faint)]">
+          <Plus size={12} strokeWidth={1.5} />
+        </td>
+        <td colSpan={TOTAL_COLS - 1} className="px-1 py-1">
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="w-full text-left bg-transparent border-none outline-none px-2 py-1 text-xs text-[var(--color-text-faint)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-hover)] cursor-pointer rounded-sm transition-colors"
+          >
+            {label}
+          </button>
+        </td>
+      </tr>
+      <DealCreateModal open={open} onOpenChange={setOpen} section={section} />
+    </>
   );
 }
