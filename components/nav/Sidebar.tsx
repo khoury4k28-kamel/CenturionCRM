@@ -111,23 +111,6 @@ function SidebarFooter({
 
   return (
     <div className="px-5 py-4 border-t border-[var(--color-border)] space-y-3">
-      <div>
-        <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-faint)] mb-1 flex items-center gap-1">
-          <span>Signed in as</span>
-          {isOwner ? (
-            <span
-              title="Owner — can manage access"
-              className="text-[var(--color-accent)]"
-            >
-              ★
-            </span>
-          ) : null}
-        </div>
-        <div className="text-xs text-[var(--color-text)] truncate">
-          {user ? user.name : "Local dev"}
-        </div>
-      </div>
-
       {showTeamRow ? (
         <div>
           <div className="flex items-center justify-between mb-1.5">
@@ -171,6 +154,23 @@ function SidebarFooter({
           </div>
         </div>
       ) : null}
+
+      <div>
+        <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-faint)] mb-1 flex items-center gap-1">
+          <span>Signed in as</span>
+          {isOwner ? (
+            <span
+              title="Owner — can manage access"
+              className="text-[var(--color-accent)]"
+            >
+              ★
+            </span>
+          ) : null}
+        </div>
+        <div className="text-xs text-[var(--color-text)] truncate">
+          {user ? user.name : "Local dev"}
+        </div>
+      </div>
     </div>
   );
 }
