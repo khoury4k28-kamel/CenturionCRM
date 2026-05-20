@@ -1,0 +1,50 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Static export build (excludes server-only API routes)
+        run: |
+          mv app/api app/_api_excluded
+          npm run build
+          mv app/_api_excluded app/api
+        env:
+          STATIC_EXPORT: "1"
+          NEXT_PUBLIC_LIVEBLOCKS_PUBLIC_KEY: ${{ secrets.LIVEBLOCKS_PUBLIC_KEY }}
+      - name: Inject SPA redirect into 404.html
+        run: node scripts/inject-spa-redirect.mjs
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./out
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

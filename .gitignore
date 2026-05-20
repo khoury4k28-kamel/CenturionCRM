@@ -32,6 +32,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -39,3 +40,16 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+/app/generated/prisma
+
+# local sqlite database — never commit (contains real deal data)
+*.db
+*.db-shm
+*.db-wal
+
+# local server logs
+/dev.log
+
+# local file uploads (production uses Liveblocks data URLs)
+/public/uploads/

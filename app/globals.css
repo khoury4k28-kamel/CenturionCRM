@@ -1,26 +1,232 @@
 @import "tailwindcss";
 
+/* Tailwind 4: class-based dark variant */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* =====================================================================
+   Design tokens — light is default on :root; .dark overrides
+   ===================================================================== */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: light;
+
+  /* Surfaces */
+  --color-bg:            #fbfaf6;
+  --color-bg-elevated:   #f5f3ec;
+  --color-bg-hover:      #efece2;
+  --color-panel:         #ffffff;
+  --color-panel-border:  #e8e3d5;
+  --color-border:        #e8e3d5;
+  --color-border-strong: #d4ccba;
+
+  /* Type */
+  --color-text:          #1a1814;
+  --color-text-muted:    #6b6457;
+  --color-text-faint:    #9b9384;
+
+  /* Accent — split into ink vs solid */
+  --color-accent:        #b08b1d;
+  --color-accent-hover:  #97791a;
+  --color-accent-fg:     #ffffff;
+  --color-accent-solid:  #cba135;
+
+  /* Semantic */
+  --color-danger:        #c43d22;
+  --color-success:       #4e8a4b;
+  --color-info:          #4f7398;
+  --color-highlight:     #ffe066;
+  --color-highlight-fg:  #1a1300;
+
+  /* Shadows & ring (light = subtle lift) */
+  --shadow-card:         0 1px 2px rgba(20, 16, 8, 0.04), 0 1px 1px rgba(20, 16, 8, 0.03);
+  --shadow-card-hover:   0 2px 6px rgba(20, 16, 8, 0.06), 0 1px 2px rgba(20, 16, 8, 0.04);
+  --ring-focus:          0 0 0 3px rgba(176, 139, 29, 0.22);
+
+  /* Scrollbar */
+  --scrollbar-thumb:       #d4ccba;
+  --scrollbar-thumb-hover: #b9b09b;
+  --scrollbar-track:       transparent;
+
+  /* Stage badges — light pastels */
+  --stage-new-lead-bg:        #e7eef5;
+  --stage-new-lead-text:      #2b5f86;
+  --stage-new-lead-border:    #c8d8e6;
+
+  --stage-researching-bg:     #f5efd6;
+  --stage-researching-text:   #836a14;
+  --stage-researching-border: #e3d99f;
+
+  --stage-contacted-bg:       #e3efe1;
+  --stage-contacted-text:     #2f6b30;
+  --stage-contacted-border:   #c4ddc1;
+
+  --stage-negotiating-bg:     #f1e3ee;
+  --stage-negotiating-text:   #7a3672;
+  --stage-negotiating-border: #d9c1d4;
+
+  --stage-under-agreement-bg:     #f5e6d6;
+  --stage-under-agreement-text:   #8a521a;
+  --stage-under-agreement-border: #e3cda7;
+
+  --stage-in-escrow-bg:       #d9ecec;
+  --stage-in-escrow-text:     #1f6868;
+  --stage-in-escrow-border:   #b6d6d6;
+
+  --stage-listed-bg:          #f0e6d2;
+  --stage-listed-text:        #7a5a1a;
+  --stage-listed-border:      #d9c79f;
+
+  --stage-closed-bg:          #d8ebd6;
+  --stage-closed-text:        #245c25;
+  --stage-closed-border:      #b3d3b0;
+
+  --stage-dead-bg:            #f3dcd6;
+  --stage-dead-text:          #8a2b1a;
+  --stage-dead-border:        #e0bdb3;
+
+  /* Fonts (constant across themes) */
+  --font-sans: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 }
 
+.dark {
+  color-scheme: dark;
+
+  --color-bg:            #0c0c0d;
+  --color-bg-elevated:   #161618;
+  --color-bg-hover:      #1d1d20;
+  --color-panel:         #141416;
+  --color-panel-border:  #232327;
+  --color-border:        #27272a;
+  --color-border-strong: #353539;
+
+  --color-text:          #f1f1ef;
+  --color-text-muted:    #a8a8a8;
+  --color-text-faint:    #6b6b6b;
+
+  --color-accent:        #cba135;
+  --color-accent-hover:  #d6ad42;
+  --color-accent-fg:     #0c0c0d;
+  --color-accent-solid:  #cba135;
+
+  --color-danger:        #e0533a;
+  --color-success:       #6ba368;
+  --color-info:          #6b8db4;
+  --color-highlight:     #f4d03f;
+  --color-highlight-fg:  #1a1300;
+
+  --shadow-card:         none;
+  --shadow-card-hover:   inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --ring-focus:          0 0 0 3px rgba(203, 161, 53, 0.30);
+
+  --scrollbar-thumb:       #27272a;
+  --scrollbar-thumb-hover: #353539;
+  --scrollbar-track:       transparent;
+
+  --stage-new-lead-bg:        #1a2a35;
+  --stage-new-lead-text:      #7fb1d4;
+  --stage-new-lead-border:    #244055;
+
+  --stage-researching-bg:     #2a2a1a;
+  --stage-researching-text:   #d4c77f;
+  --stage-researching-border: #403c24;
+
+  --stage-contacted-bg:       #1e2a1e;
+  --stage-contacted-text:     #88c089;
+  --stage-contacted-border:   #2a3f2a;
+
+  --stage-negotiating-bg:     #2a1e2a;
+  --stage-negotiating-text:   #c989c0;
+  --stage-negotiating-border: #3f2a3f;
+
+  --stage-under-agreement-bg:     #2a221e;
+  --stage-under-agreement-text:   #d4a07f;
+  --stage-under-agreement-border: #403322;
+
+  --stage-in-escrow-bg:       #1e2a2a;
+  --stage-in-escrow-text:     #7fc9c9;
+  --stage-in-escrow-border:   #244040;
+
+  --stage-listed-bg:          #2a2418;
+  --stage-listed-text:        #d4b07f;
+  --stage-listed-border:      #403324;
+
+  --stage-closed-bg:          #1e2a1e;
+  --stage-closed-text:        #88c089;
+  --stage-closed-border:      #2a3f2a;
+
+  --stage-dead-bg:            #2a1a1a;
+  --stage-dead-text:          #d47f7f;
+  --stage-dead-border:        #402424;
+}
+
+/* =====================================================================
+   Tailwind theme — `inline` so var() is preserved for runtime switching
+   ===================================================================== */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-bg: var(--color-bg);
+  --color-bg-elevated: var(--color-bg-elevated);
+  --color-bg-hover: var(--color-bg-hover);
+  --color-panel: var(--color-panel);
+  --color-panel-border: var(--color-panel-border);
+  --color-border: var(--color-border);
+  --color-border-strong: var(--color-border-strong);
+  --color-text: var(--color-text);
+  --color-text-muted: var(--color-text-muted);
+  --color-text-faint: var(--color-text-faint);
+  --color-accent: var(--color-accent);
+  --color-accent-hover: var(--color-accent-hover);
+  --color-accent-fg: var(--color-accent-fg);
+  --color-accent-solid: var(--color-accent-solid);
+  --color-danger: var(--color-danger);
+  --color-success: var(--color-success);
+  --color-info: var(--color-info);
+  --color-highlight: var(--color-highlight);
+  --color-highlight-fg: var(--color-highlight-fg);
+
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+/* =====================================================================
+   Base styles
+   ===================================================================== */
 
+html,
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-feature-settings: "ss01", "cv11";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: var(--color-accent-solid);
+  color: var(--color-accent-fg);
+}
+
+/* Refined scrollbars */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 5px;
+  border: 2px solid var(--color-bg);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+/* Soft gold focus ring */
+*:focus-visible {
+  outline: none;
+  box-shadow: var(--ring-focus);
+  border-radius: 2px;
 }
