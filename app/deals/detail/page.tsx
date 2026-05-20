@@ -51,6 +51,7 @@ function DealDetailInner() {
               dueDate: t.dueDate,
               completedAt: t.completedAt,
               dealId: t.dealId,
+              assignees: t.assignees ?? [],
             }))
         : [],
     [tasks, deal],
@@ -71,7 +72,7 @@ function DealDetailInner() {
     return (
       <div className="px-8 py-12 text-sm text-[var(--color-text-muted)]">
         No deal selected.{" "}
-        <Link href="/dashboard" className="text-[var(--color-accent)] hover:underline">
+        <Link href="/deals" className="text-[var(--color-accent)] hover:underline">
           Back to pipeline
         </Link>
       </div>
@@ -88,7 +89,7 @@ function DealDetailInner() {
     <>
       <div className="px-8 py-6 border-b border-[var(--color-border)]">
         <Link
-          href="/dashboard"
+          href="/deals"
           className="inline-flex items-center gap-1.5 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)] mb-3"
         >
           <ArrowLeft size={12} /> Back to pipeline

@@ -3,9 +3,13 @@ import { createRoomContext } from "@liveblocks/react";
 
 const LIVEBLOCKS_KEY = process.env.NEXT_PUBLIC_LIVEBLOCKS_PUBLIC_KEY;
 
+// Presence — broadcast to all connected clients in the room. Email lets the
+// TeamDock's presence dot match a connected client to its TeamMember row
+// (which carries the avatar/name persistently in storage).
 type Presence = {
   name: string;
   color: string;
+  email: string;
 };
 
 // Loose storage typing avoids LSON index-signature conflicts with TS interfaces.
@@ -55,6 +59,7 @@ export function useLbUpdateMyPresence() {
 
 // Storage shape for Centurion CRM. One LiveList per top-level collection.
 // Tasks, documents, templates, and contacts are kept flat; deals own properties via embedded fields.
+// teamMembers + allowedEmails were added with Google auth — see contexts/AuthContext.tsx.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function createInitialStorage(): any {
   return {
@@ -63,6 +68,8 @@ export function createInitialStorage(): any {
     tasks: new LiveList([]),
     templates: new LiveList([]),
     documents: new LiveList([]),
+    teamMembers: new LiveList([]),
+    allowedEmails: new LiveList([]),
   };
 }
 

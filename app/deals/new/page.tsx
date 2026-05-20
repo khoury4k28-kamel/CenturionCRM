@@ -13,7 +13,7 @@ export default function NewDealPage() {
         title="New deal"
         description="Start with the property address — everything else can be filled in as you learn it."
         actions={
-          <Link href="/dashboard">
+          <Link href="/deals">
             <Button variant="secondary" size="md">
               <ArrowLeft size={14} strokeWidth={2} />
               Back
@@ -78,7 +78,7 @@ export default function NewDealPage() {
           </Card>
 
           <div className="flex justify-end gap-2">
-            <Link href="/dashboard">
+            <Link href="/deals">
               <Button variant="ghost" size="md" type="button">
                 Cancel
               </Button>

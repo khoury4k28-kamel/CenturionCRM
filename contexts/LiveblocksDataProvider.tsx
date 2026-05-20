@@ -36,11 +36,14 @@ import DataContext, {
   type TaskUpdateInput,
   type TemplateCreateInput,
   type TemplateUpdateInput,
+  type EnsureTeamMemberInput,
 } from "./DataContext";
 import {
   RoomProvider,
   useLbStorage,
   useLbMutation,
+  useLbOthers,
+  useLbUpdateMyPresence,
   createInitialStorage,
   LIVEBLOCKS_ROOM_ID,
 } from "@/lib/liveblocks.config";
@@ -51,7 +54,10 @@ import {
   type DocStatus,
   type Binding,
   type TemplateFormat,
+  type TeamMember,
 } from "@/lib/types";
+import { useAuth } from "./AuthContext";
+import { getRandomColor } from "@/lib/colors";
 import type {
   DealDTO,
   ContactDTO,
@@ -203,6 +209,64 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
 
   // Use deals as-is — TemplateDTO-style derivation isn't needed.
   const deals = dealsRaw ?? [];
+
+  // ── TEAM / PRESENCE STATE ─────────────────────────────────────────
+  // teamMembers = persistent roster (Liveblocks storage)
+  // allowedEmails = invite list editable by owner
+  // connectedEmails = live presence (who's connected right now)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const teamMembersRaw = useLbStorage((root: any) =>
+    root.teamMembers?.toImmutable?.() ?? [],
+  );
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const allowedEmailsRaw = useLbStorage((root: any) =>
+    root.allowedEmails?.toImmutable?.() ?? [],
+  );
+  const teamMembers: TeamMember[] = useMemo(
+    () => (teamMembersRaw ?? []) as TeamMember[],
+    [teamMembersRaw],
+  );
+  const allowedEmails: string[] = useMemo(
+    () => (allowedEmailsRaw ?? []) as string[],
+    [allowedEmailsRaw],
+  );
+
+  const others = useLbOthers();
+  const { user: authUser } = useAuth();
+  const updatePresence = useLbUpdateMyPresence();
+
+  // My color: pulled from my TeamMember row (assigned on first sign-in) so
+  // the dock and presence agree. Falls back to a palette pick before the row
+  // hydrates.
+  const fallbackColorRef = useRef<string>(getRandomColor());
+  const myColor = useMemo(() => {
+    if (!authUser) return fallbackColorRef.current;
+    const me = teamMembers.find(
+      (m) => m.email.toLowerCase() === authUser.email.toLowerCase(),
+    );
+    return me?.color ?? fallbackColorRef.current;
+  }, [authUser, teamMembers]);
+
+  // Broadcast my identity to other clients in the room.
+  useEffect(() => {
+    if (!authUser) return;
+    updatePresence({
+      name: authUser.name,
+      color: myColor,
+      email: authUser.email.toLowerCase(),
+    });
+  }, [authUser, myColor, updatePresence]);
+
+  // Derive "who's online" — other clients' presence emails + self if signed in.
+  const connectedEmails: string[] = useMemo(() => {
+    const set = new Set<string>();
+    for (const o of others as Array<{ presence?: { email?: string } }>) {
+      const e = o.presence?.email?.toLowerCase();
+      if (e) set.add(e);
+    }
+    if (authUser) set.add(authUser.email.toLowerCase());
+    return Array.from(set);
+  }, [others, authUser]);
 
   // Undo state — local React, not shared. ⌘Z is a single-user concept.
   const undoStackRef = useRef<UndoEntry[]>([]);
@@ -689,6 +753,7 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
         notes: input.notes ?? null,
         dueDate: input.dueDate ?? null,
         completedAt: null,
+        assignees: [],
         createdAt: now,
         updatedAt: now,
       };
@@ -756,6 +821,155 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
       return true;
     },
     [deleteTaskMut],
+  );
+
+  // ── TEAM MEMBERS ──────────────────────────────────────────────────
+  // ensureTeamMember dedupes by email. Updates name/picture if the user's
+  // Google profile changed since last sign-in.
+
+  const ensureTeamMemberMut = useLbMutation(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ({ storage }: any, input: EnsureTeamMemberInput & { color: string }) => {
+      const list = storage.get("teamMembers");
+      const emailLc = input.email.toLowerCase();
+      for (let i = 0; i < list.length; i++) {
+        const m = list.get(i);
+        if ((m.get("email") || "").toLowerCase() === emailLc) {
+          m.update({
+            name: input.name,
+            picture: input.picture,
+          });
+          return;
+        }
+      }
+      const member: TeamMember = {
+        id: uid(),
+        email: emailLc,
+        name: input.name,
+        picture: input.picture,
+        color: input.color,
+        addedAt: Date.now(),
+      };
+      list.push(liveObj(member));
+    },
+    [],
+  ) as (input: EnsureTeamMemberInput & { color: string }) => void;
+
+  const ensureTeamMember = useCallback(
+    (input: EnsureTeamMemberInput) => {
+      ensureTeamMemberMut({ ...input, color: fallbackColorRef.current });
+    },
+    [ensureTeamMemberMut],
+  );
+
+  const removeTeamMemberMut = useLbMutation(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ({ storage }: any, id: string) => {
+      const list = storage.get("teamMembers");
+      const i = findIndexById(list, id);
+      if (i >= 0) list.delete(i);
+
+      // Also unassign them from any tasks they were on.
+      const tList = storage.get("tasks");
+      for (let i = 0; i < tList.length; i++) {
+        const t = tList.get(i);
+        const cur = (t.get("assignees") || []) as string[];
+        if (cur.includes(id)) {
+          t.set(
+            "assignees",
+            cur.filter((x) => x !== id),
+          );
+        }
+      }
+    },
+    [],
+  ) as (id: string) => void;
+
+  const removeTeamMember = useCallback(
+    (id: string) => removeTeamMemberMut(id),
+    [removeTeamMemberMut],
+  );
+
+  // ── ALLOWED EMAILS (invite list) ──────────────────────────────────
+
+  const addAllowedEmailMut = useLbMutation(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ({ storage }: any, email: string) => {
+      const list = storage.get("allowedEmails");
+      const emailLc = email.toLowerCase();
+      for (let i = 0; i < list.length; i++) {
+        if ((list.get(i) || "").toLowerCase() === emailLc) return;
+      }
+      list.push(emailLc);
+    },
+    [],
+  ) as (email: string) => void;
+
+  const addAllowedEmail = useCallback(
+    (email: string) => addAllowedEmailMut(email),
+    [addAllowedEmailMut],
+  );
+
+  const removeAllowedEmailMut = useLbMutation(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ({ storage }: any, email: string) => {
+      const list = storage.get("allowedEmails");
+      const emailLc = email.toLowerCase();
+      for (let i = list.length - 1; i >= 0; i--) {
+        if ((list.get(i) || "").toLowerCase() === emailLc) list.delete(i);
+      }
+    },
+    [],
+  ) as (email: string) => void;
+
+  const removeAllowedEmail = useCallback(
+    (email: string) => removeAllowedEmailMut(email),
+    [removeAllowedEmailMut],
+  );
+
+  // ── TASK ASSIGNMENT ───────────────────────────────────────────────
+
+  const assignTaskMut = useLbMutation(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ({ storage }: any, taskId: string, memberId: string) => {
+      const list = storage.get("tasks");
+      const i = findIndexById(list, taskId);
+      if (i < 0) return;
+      const t = list.get(i);
+      const cur = (t.get("assignees") || []) as string[];
+      if (cur.includes(memberId)) return;
+      t.set("assignees", [...cur, memberId]);
+      t.set("updatedAt", nowIso());
+    },
+    [],
+  ) as (taskId: string, memberId: string) => void;
+
+  const assignTask = useCallback(
+    (taskId: string, memberId: string) => assignTaskMut(taskId, memberId),
+    [assignTaskMut],
+  );
+
+  const unassignTaskMut = useLbMutation(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ({ storage }: any, taskId: string, memberId: string) => {
+      const list = storage.get("tasks");
+      const i = findIndexById(list, taskId);
+      if (i < 0) return;
+      const t = list.get(i);
+      const cur = (t.get("assignees") || []) as string[];
+      if (!cur.includes(memberId)) return;
+      t.set(
+        "assignees",
+        cur.filter((x) => x !== memberId),
+      );
+      t.set("updatedAt", nowIso());
+    },
+    [],
+  ) as (taskId: string, memberId: string) => void;
+
+  const unassignTask = useCallback(
+    (taskId: string, memberId: string) => unassignTaskMut(taskId, memberId),
+    [unassignTaskMut],
   );
 
   // ── TEMPLATES ─────────────────────────────────────────────────────
@@ -1083,6 +1297,15 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
     documents,
     generateDocument,
     setDocumentStatus,
+    teamMembers,
+    connectedEmails,
+    allowedEmails,
+    ensureTeamMember,
+    removeTeamMember,
+    addAllowedEmail,
+    removeAllowedEmail,
+    assignTask,
+    unassignTask,
     undo,
     canUndo: canUndoState,
   };
@@ -1105,7 +1328,7 @@ export function LiveblocksDataProvider({ children }: { children: ReactNode }) {
   return (
     <RP
       id={LIVEBLOCKS_ROOM_ID}
-      initialPresence={{ name: "", color: "" }}
+      initialPresence={{ name: "", color: "", email: "" }}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       initialStorage={createInitialStorage() as any}
     >

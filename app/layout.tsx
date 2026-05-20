@@ -5,6 +5,10 @@ import { Sidebar } from "@/components/nav/Sidebar";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import { ThemedToaster } from "@/components/ui/ThemedToaster";
 import { DataProvider } from "@/contexts/DataProvider";
+import TeamDockMount from "@/components/team/TeamDockMount";
+import TopRightPanelMount from "@/components/nav/TopRightPanelMount";
+import { StageTaskTrayController } from "@/components/tasks/StageTaskTrayController";
+import { QuickAddTaskOverlay } from "@/components/tasks/QuickAddTaskOverlay";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -61,6 +65,10 @@ export default function RootLayout({
               <Sidebar />
               <main className="flex-1 min-w-0">{children}</main>
             </div>
+            <TeamDockMount />
+            <TopRightPanelMount />
+            <StageTaskTrayController />
+            <QuickAddTaskOverlay />
           </DataProvider>
           <ThemedToaster />
         </ThemeProvider>

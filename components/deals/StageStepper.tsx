@@ -6,6 +6,7 @@ import { Check } from "lucide-react";
 import { DEAL_STAGE_LABELS, type DealStage } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useData } from "@/contexts/DataContext";
+import { emitStageChanged } from "@/lib/stage-task-events";
 
 // Stages that represent the linear "happy path"; CLOSED and DEAD are terminal
 // and shown separately.
@@ -25,9 +26,13 @@ export function StageStepper({ dealId, current }: { dealId: string; current: Dea
 
   function setStage(stage: DealStage) {
     if (stage === current) return;
+    const fromStage = current;
     startTransition(async () => {
       const ok = await moveDealStage(dealId, stage);
-      if (ok) toast.success(`Stage: ${DEAL_STAGE_LABELS[stage]}`);
+      if (ok) {
+        toast.success(`Stage: ${DEAL_STAGE_LABELS[stage]}`);
+        emitStageChanged({ dealId, fromStage, toStage: stage });
+      }
     });
   }
 

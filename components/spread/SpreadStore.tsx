@@ -11,8 +11,9 @@ import {
   type ReactNode,
 } from "react";
 import { toast } from "sonner";
-import type { SpreadField } from "@/lib/types";
+import type { SpreadField, DealStage } from "@/lib/types";
 import { useData } from "@/contexts/DataContext";
+import { emitStageChanged } from "@/lib/stage-task-events";
 import {
   COLUMN_IDS,
   EDITABLE_COLUMN_IDS,
@@ -403,7 +404,7 @@ export function SpreadStore({
   );
 
   const fireSave = useCallback(
-    async (op: Op, body: SaveBody, mode: "apply" | "undo" | "redo") => {
+    async (op: Op, body: SaveBody, mode: "apply" | "undo" | "redo"): Promise<boolean> => {
       const { dealId, col } = opTarget(op);
       const key = statusKey(dealId, col);
       dispatch({ type: "SET_SAVE_STATUS", key, status: "saving" });
@@ -411,7 +412,7 @@ export function SpreadStore({
       if (ok) {
         dispatch({ type: "SET_SAVE_STATUS", key, status: "saved" });
         fadeStatus(key, 800);
-        return;
+        return true;
       }
       // Provider has already surfaced the error via toast. Just flash the cell
       // and roll our optimistic state back to match the provider's source of
@@ -421,6 +422,7 @@ export function SpreadStore({
       if (mode === "apply") dispatch({ type: "ROLLBACK_APPLY", op });
       else if (mode === "undo") dispatch({ type: "ROLLBACK_UNDO", op });
       else dispatch({ type: "ROLLBACK_REDO", op });
+      return false;
     },
     [fadeStatus, dispatchSave],
   );
@@ -542,7 +544,24 @@ export function SpreadStore({
         next,
       };
       dispatch({ type: "APPLY", op });
-      void fireSave(op, { kind: "spread-cell", field, value: next }, "apply");
+      // For stage transitions in the spread, emit a user-driven stage-changed
+      // event after the save succeeds so the StageTaskTrayController can offer
+      // canonical tasks. Skip on undo/redo (those go through fireSave's other
+      // modes and never reach this branch).
+      void fireSave(op, { kind: "spread-cell", field, value: next }, "apply").then((ok) => {
+        if (
+          ok &&
+          field === "stage" &&
+          typeof prev === "string" &&
+          typeof next === "string"
+        ) {
+          emitStageChanged({
+            dealId,
+            fromStage: prev as DealStage,
+            toStage: next as DealStage,
+          });
+        }
+      });
     },
     [fireSave],
   );

@@ -9,6 +9,10 @@ import { BindingsList } from "./BindingsList";
 import type { Binding } from "@/lib/types";
 import { useData } from "@/contexts/DataContext";
 
+// Match the basePath pattern in app/layout.tsx — static export ships under
+// /CenturionCRM on GitHub Pages; local dev runs at the root.
+const BASE_PATH = process.env.STATIC_EXPORT === "1" ? "/CenturionCRM" : "";
+
 type DragState = {
   active: boolean;
   page: number;
@@ -46,10 +50,10 @@ export function PdfBindingEditor({
     async function render() {
       if (!containerRef.current) return;
       try {
-        // Use legacy build for broad bundler compat.
+        // Use legacy build for broad bundler compat. Worker is copied into
+        // /public by scripts/copy-pdf-worker.mjs (npm predev/prebuild).
         const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-        // Disable worker — runs on main thread, fine for v1.
-        pdfjs.GlobalWorkerOptions.workerSrc = "";
+        pdfjs.GlobalWorkerOptions.workerSrc = `${BASE_PATH}/pdf.worker.min.mjs`;
         const res = await fetch(fileUrl);
         const buf = await res.arrayBuffer();
         const doc = await pdfjs.getDocument({ data: buf }).promise;

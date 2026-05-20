@@ -230,3 +230,9 @@ body {
   box-shadow: var(--ring-focus);
   border-radius: 2px;
 }
+
+/* Right-aligned side panel entrance — used by components/ui/side-panel.tsx */
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}

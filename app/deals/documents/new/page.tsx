@@ -45,7 +45,7 @@ function NewDocumentInner() {
       <>
         <PageHeader title="Generate document" description="No deal selected." />
         <div className="px-8 py-12 text-sm text-[var(--color-text-muted)]">
-          <Link href="/dashboard" className="text-[var(--color-accent)] hover:underline">
+          <Link href="/deals" className="text-[var(--color-accent)] hover:underline">
             Back to pipeline
           </Link>
         </div>

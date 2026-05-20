@@ -3,9 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "node scripts/copy-pdf-worker.mjs",
     "dev": "next dev",
+    "prebuild": "node scripts/copy-pdf-worker.mjs",
     "build": "next build",
-    "build:static": "mv app/api app/_api_excluded && STATIC_EXPORT=1 next build; status=$?; mv app/_api_excluded app/api; if [ $status -eq 0 ]; then node scripts/inject-spa-redirect.mjs; fi; exit $status",
+    "build:static": "node scripts/copy-pdf-worker.mjs && mv app/api app/_api_excluded && STATIC_EXPORT=1 next build; status=$?; mv app/_api_excluded app/api; if [ $status -eq 0 ]; then node scripts/inject-spa-redirect.mjs; fi; exit $status",
     "start": "next start",
     "lint": "eslint"
   },

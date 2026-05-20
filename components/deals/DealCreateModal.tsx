@@ -52,6 +52,9 @@ export function DealCreateModal({
       if (!id) return;
       // New deals come in as NEW_LEAD, which appears in ACTIVES. Only need to
       // bump stage if the user added it under the IN_ESCROW section.
+      // Intentionally does NOT call emitStageChanged — that signal is for
+      // user-driven stage navigation (drag, dropdown, cell edit), not the
+      // programmatic auto-bump during deal creation.
       if (section === "IN_ESCROW") {
         await moveDealStage(id, "IN_ESCROW");
       }

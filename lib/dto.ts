@@ -67,6 +67,10 @@ export type TaskDTO = {
   notes: string | null;
   dueDate: string | null; // ISO date
   completedAt: string | null; // ISO timestamp
+  // Multi-assignee — array of TeamMember.id values. Only populated in
+  // Liveblocks mode; BackendDataProvider returns []. Optional in TS so old
+  // records loaded from Prisma don't fail the type check.
+  assignees?: string[];
   createdAt: string;
   updatedAt: string;
 };

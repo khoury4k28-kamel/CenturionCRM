@@ -634,6 +634,18 @@ export function BackendDataProvider({ children }: { children: ReactNode }) {
     documents,
     generateDocument,
     setDocumentStatus,
+    // Team/access fields — local Prisma mode is effectively single-user, so
+    // these are inert. AuthGate isn't mounted in local mode either (see
+    // DataProvider.tsx) so the dock/manager UI never appears.
+    teamMembers: [],
+    connectedEmails: [],
+    allowedEmails: [],
+    ensureTeamMember: () => {},
+    removeTeamMember: () => {},
+    addAllowedEmail: () => {},
+    removeAllowedEmail: () => {},
+    assignTask: () => {},
+    unassignTask: () => {},
     undo,
     canUndo,
   };

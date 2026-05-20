@@ -1,5 +1,17 @@
 // String unions that mirror the SQLite-friendly columns in prisma/schema.prisma.
 
+// A team member is a person who has signed into the app via Google. The roster
+// lives in Liveblocks storage (see lib/liveblocks.config.ts); the BackendDataProvider
+// stubs it as an empty list since local Prisma mode is single-user.
+export type TeamMember = {
+  id: string;
+  email: string;       // canonical lowercase Google email — also the dedup key
+  name: string;        // Google display name
+  picture: string;     // Google profile photo URL (may be empty)
+  color: string;       // hex from the fixed palette in lib/colors.ts
+  addedAt: number;     // epoch ms
+};
+
 export const DEAL_STAGES = [
   "NEW_LEAD",
   "RESEARCHING",

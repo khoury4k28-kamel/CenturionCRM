@@ -20,7 +20,13 @@ import type {
 // DocumentDTO referenced only via DataContextType.documents at this layer; keep
 // the import so the type is exported transitively.
 export type { DocumentDTO };
-import type { DealStage, SpreadField, ContactType, DocStatus } from "@/lib/types";
+import type {
+  DealStage,
+  SpreadField,
+  ContactType,
+  DocStatus,
+  TeamMember,
+} from "@/lib/types";
 
 // ── Mutation input shapes ────────────────────────────────────────────────
 
@@ -92,7 +98,16 @@ export type TaskUpdateInput = Partial<{
   dueDate: string | null;
   completedAt: string | null;
   notes: string | null;
+  assignees: string[];
 }>;
+
+// Payload for ensureTeamMember — only the fields we learn from Google. The
+// provider assigns id/color/addedAt on creation.
+export type EnsureTeamMemberInput = {
+  email: string;
+  name: string;
+  picture: string;
+};
 
 export type TemplateUpdateInput = Partial<{
   name: string;
@@ -171,6 +186,29 @@ export interface DataContextType {
   documents: DocumentDTO[];
   generateDocument: (dealId: string, templateId: string) => Promise<boolean>;
   setDocumentStatus: (id: string, status: DocStatus) => Promise<boolean>;
+
+  // ── Team / access ────────────────────────────────────────
+  // Live in Liveblocks storage in hosted mode; stubbed as empty arrays /
+  // no-ops in local Prisma mode (which is effectively single-user).
+  teamMembers: TeamMember[];
+  // Emails currently broadcasting Liveblocks presence (i.e. "online now").
+  // Lowercase. Includes self.
+  connectedEmails: string[];
+  // List of emails the owner has explicitly granted access to. Does NOT
+  // include the owner(s) — they bypass via NEXT_PUBLIC_OWNER_EMAILS.
+  allowedEmails: string[];
+
+  // Add (or update) a team-member row keyed by email. Idempotent. Called by
+  // AuthGate the first time a signed-in user lands on the app.
+  ensureTeamMember: (input: EnsureTeamMemberInput) => void;
+  removeTeamMember: (id: string) => void;
+  addAllowedEmail: (email: string) => void;
+  removeAllowedEmail: (email: string) => void;
+
+  // Multi-assign on tasks. Toggle helpers from the dock drag-drop + the
+  // AssigneesSection pills.
+  assignTask: (taskId: string, memberId: string) => void;
+  unassignTask: (taskId: string, memberId: string) => void;
 
   // ── Undo ─────────────────────────────────────────────────
   // Tasks-only for now (Mālama parity covers tasks + investors; Centurion's
