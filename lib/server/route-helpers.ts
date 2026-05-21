@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 
 export function jsonOk<T>(data: T, status = 200) {
   return NextResponse.json(data, { status });
@@ -16,19 +16,21 @@ export async function parseBody<T>(request: Request): Promise<T> {
   return request.json() as Promise<T>;
 }
 
-type RouteHandler = (
-  request: NextRequest,
-  context?: { params: Promise<Record<string, string>> },
-) => Promise<NextResponse>;
-
-export function withErrorHandler(handler: RouteHandler): RouteHandler {
-  return async (request, context) => {
+// Generic so a handler's existing signature (Request vs NextRequest, narrow
+// param types like `{ id: string }`) is preserved. Without the generic the
+// wrapper would force every route to widen its param type to
+// Record<string, string>, which fights Next's typed `await params` pattern.
+export function withErrorHandler<H extends (...args: never[]) => Promise<NextResponse>>(
+  handler: H,
+): H {
+  return (async (...args: never[]) => {
     try {
-      return await handler(request, context);
+      return await handler(...args);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Internal server error";
-      console.error(`[API Error] ${request.method} ${request.url}:`, err);
+      const req = args[0] as Request | undefined;
+      console.error(`[API Error] ${req?.method ?? "?"} ${req?.url ?? "?"}:`, err);
       return jsonError(message, 500);
     }
-  };
+  }) as H;
 }

@@ -118,7 +118,7 @@ export function BackendDataProvider({ children }: { children: ReactNode }) {
     async (input: DealCreateInput): Promise<string | null> => {
       const result = await apiCall<DealDTO>("/deals", {
         method: "POST",
-        body: JSON.stringify({ kind: "full", ...input }),
+        body: JSON.stringify(input),
       });
       if (!result.ok || !result.data) {
         toast.error(`Failed to create deal: ${result.error ?? "unknown"}`);
@@ -646,6 +646,9 @@ export function BackendDataProvider({ children }: { children: ReactNode }) {
     removeAllowedEmail: () => {},
     assignTask: () => {},
     unassignTask: () => {},
+    // Activity log is hosted-mode only — the rail itself is gated on
+    // isLiveblocksEnabled so it never mounts in local dev.
+    activities: [],
     undo,
     canUndo,
   };

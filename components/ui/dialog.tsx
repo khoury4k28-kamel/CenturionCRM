@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
 export function Dialog({
@@ -17,6 +18,13 @@ export function Dialog({
   panelClassName?: string;
 }) {
   const overlayRef = useRef<HTMLDivElement>(null);
+
+  // Portal target is only available after mount (SSR has no `document`).
+  // Without this gate, callers rendered from inside a <tbody>/<tr> would
+  // briefly emit the overlay <div> as a tbody child, tripping React's
+  // hydration validator and silently breaking the modal.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     if (!open) return;
@@ -35,9 +43,9 @@ export function Dialog({
     };
   }, [open, onOpenChange]);
 
-  if (!open) return null;
+  if (!open || !mounted) return null;
 
-  return (
+  return createPortal(
     <div
       ref={overlayRef}
       role="dialog"
@@ -59,7 +67,8 @@ export function Dialog({
       >
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

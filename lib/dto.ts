@@ -10,6 +10,14 @@
 
 import type { ContactType, DealStage, TemplateFormat, DocStatus, Binding } from "./types";
 
+// Activity log types live in lib/types.ts but consumers usually import all
+// shapes from here — re-export for convenience.
+export type {
+  ActivityEntry,
+  ActivityKind,
+  ActivityEntityType,
+} from "./types";
+
 export type PropertyDTO = {
   id: string;
   address: string;

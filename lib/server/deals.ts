@@ -266,17 +266,3 @@ export async function setOwed(id: string, raw: string) {
   return prisma.deal.update({ where: { id }, data: { amountOwed: n, weOwn: false } });
 }
 
-export async function createSpreadRow(section: "ACTIVES" | "IN_ESCROW", address: string) {
-  const trimmed = address.trim();
-  if (!trimmed) throw new Error("Address required");
-  if (section !== "ACTIVES" && section !== "IN_ESCROW") throw new Error("Invalid section");
-  const user = await getDefaultUser();
-
-  return prisma.deal.create({
-    data: {
-      stage: section === "IN_ESCROW" ? "IN_ESCROW" : "LISTED",
-      createdBy: { connect: { id: user.id } },
-      property: { create: { address: trimmed } },
-    },
-  });
-}

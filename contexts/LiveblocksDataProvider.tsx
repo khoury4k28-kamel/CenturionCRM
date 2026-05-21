@@ -55,9 +55,19 @@ import {
   type Binding,
   type TemplateFormat,
   type TeamMember,
+  type ActivityEntry,
+  type ActivityKind,
+  type ActivityEntityType,
 } from "@/lib/types";
 import { useAuth } from "./AuthContext";
 import { getRandomColor } from "@/lib/colors";
+import {
+  dealDisplayLabel,
+  contactDisplayLabel,
+  taskDisplayLabel,
+  templateDisplayLabel,
+  stageDisplay,
+} from "@/lib/activity-labels";
 import type {
   DealDTO,
   ContactDTO,
@@ -125,6 +135,21 @@ function findIndexById(list: any, id: string): number {
   return -1;
 }
 
+// Lazily initialize a LiveList that was missing from initial storage. Rooms
+// created before a field was added to `createInitialStorage` (e.g. centurion-crm
+// was created in Phase 2d with only deals/contacts/tasks/templates/documents)
+// never get re-seeded — `initialStorage` only applies on first create. Without
+// this, the first write to a never-seeded key throws TypeError because
+// getOrInitList(storage, "activities") returns undefined.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function getOrInitList(storage: any, key: string): any {
+  const existing = storage.get(key);
+  if (existing) return existing;
+  const fresh = new LiveList([]);
+  storage.set(key, fresh);
+  return storage.get(key);
+}
+
 // ── Undo stack (tasks only, matches BackendDataProvider) ───────────────
 
 interface UndoEntry {
@@ -145,23 +170,23 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
   // ahead of their loading check.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const dealsRawRaw = useLbStorage((root: any) =>
-    root.deals?.toImmutable?.() ?? [],
+    root.deals ?? [],
   );
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const contactsRaw = useLbStorage((root: any) =>
-    root.contacts?.toImmutable?.() ?? [],
+    root.contacts ?? [],
   );
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const tasksRaw = useLbStorage((root: any) =>
-    root.tasks?.toImmutable?.() ?? [],
+    root.tasks ?? [],
   );
   const templatesRawNullable = useLbStorage(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (root: any) => root.templates?.toImmutable?.() ?? [],
+    (root: any) => root.templates ?? [],
   );
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const documentsRaw = useLbStorage((root: any) =>
-    root.documents?.toImmutable?.() ?? [],
+    root.documents ?? [],
   );
 
   // isLoaded flips true once any selector has returned (storage hydrated).
@@ -207,8 +232,10 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
     [templatesRaw, documents],
   );
 
-  // Use deals as-is — TemplateDTO-style derivation isn't needed.
-  const deals = dealsRaw ?? [];
+  // Use deals as-is — TemplateDTO-style derivation isn't needed. Wrapped in
+  // useMemo (matching the other lists above) so useCallback dep arrays that
+  // depend on `deals` don't invalidate on every render when dealsRaw is null.
+  const deals: DealDTO[] = useMemo(() => dealsRaw ?? [], [dealsRaw]);
 
   // ── TEAM / PRESENCE STATE ─────────────────────────────────────────
   // teamMembers = persistent roster (Liveblocks storage)
@@ -216,11 +243,15 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
   // connectedEmails = live presence (who's connected right now)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const teamMembersRaw = useLbStorage((root: any) =>
-    root.teamMembers?.toImmutable?.() ?? [],
+    root.teamMembers ?? [],
   );
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const allowedEmailsRaw = useLbStorage((root: any) =>
-    root.allowedEmails?.toImmutable?.() ?? [],
+    root.allowedEmails ?? [],
+  );
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const activitiesRaw = useLbStorage((root: any) =>
+    root.activities ?? [],
   );
   const teamMembers: TeamMember[] = useMemo(
     () => (teamMembersRaw ?? []) as TeamMember[],
@@ -229,6 +260,10 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
   const allowedEmails: string[] = useMemo(
     () => (allowedEmailsRaw ?? []) as string[],
     [allowedEmailsRaw],
+  );
+  const activities: ActivityEntry[] = useMemo(
+    () => (activitiesRaw ?? []) as ActivityEntry[],
+    [activitiesRaw],
   );
 
   const others = useLbOthers();
@@ -275,6 +310,101 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
     setCanUndoState(undoStackRef.current.length > 0);
   }, []);
 
+  // ── Activity log ──────────────────────────────────────────────────
+  // pushActivity is invoked as a *separate* useLbMutation rather than inlined
+  // into each mutation. Two reasons:
+  //   1. It needs to walk teamMembers to look up the actor's color, which
+  //      requires a fresh storage read at log time (not a closure snapshot).
+  //   2. Calling it after the main mutation keeps each entity-mutation
+  //      callback focused on its own work; the audit-log dependency stays
+  //      one-way and contained.
+  //
+  // authUserRef stays in sync with useAuth() without invalidating the
+  // useLbMutation closure on every auth state change (deps array is [], so
+  // capturing authUser directly would freeze the first value).
+  const authUserRef = useRef<typeof authUser>(authUser);
+  useEffect(() => {
+    authUserRef.current = authUser;
+  }, [authUser]);
+  const myColorRef = useRef<string>(myColor);
+  useEffect(() => {
+    myColorRef.current = myColor;
+  }, [myColor]);
+
+  type PushActivityInput = {
+    kind: ActivityKind;
+    summary: string;
+    entityType?: ActivityEntityType;
+    entityId?: string;
+    entityLabel?: string;
+  };
+
+  const ACTIVITY_LIMIT = 500;
+
+  const pushActivityMut = useLbMutation(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ({ storage }: any, input: PushActivityInput) => {
+      const user = authUserRef.current;
+      if (!user) return; // pre-auth mutations (shouldn't happen) — silently skip
+      const emailLc = user.email.toLowerCase();
+
+      // Look up the actor's color from teamMembers (already-frozen-on-signin
+      // palette pick). Falls back to whatever color is currently broadcast
+      // via presence so the rail isn't blank during the brief window between
+      // first sign-in and the teamMember row landing.
+      let actorColor = myColorRef.current;
+      const members = getOrInitList(storage, "teamMembers");
+      for (let i = 0; i < members.length; i++) {
+        const m = members.get(i);
+        if ((m.get("email") || "").toLowerCase() === emailLc) {
+          actorColor = m.get("color") || actorColor;
+          break;
+        }
+      }
+
+      const entry: ActivityEntry = {
+        id: uid(),
+        ts: Date.now(),
+        actorEmail: emailLc,
+        actorName: user.name,
+        actorColor,
+        actorPicture: user.picture || undefined,
+        kind: input.kind,
+        summary: input.summary,
+        entityType: input.entityType,
+        entityId: input.entityId,
+        entityLabel: input.entityLabel,
+      };
+
+      const list = getOrInitList(storage, "activities");
+      list.push(entry);
+      // Cap the rolling log so the room snapshot doesn't grow unbounded.
+      // Drop from the front (oldest) until we're back under the limit.
+      while (list.length > ACTIVITY_LIMIT) list.delete(0);
+    },
+    [],
+  ) as (input: PushActivityInput) => void;
+
+  const pushActivity = useCallback(
+    (input: PushActivityInput) => {
+      // Only log when we have a signed-in user to attribute. Calls made
+      // before auth resolves are no-ops (shouldn't happen in practice since
+      // AuthGate blocks the app until sign-in completes).
+      if (!authUserRef.current) return;
+      // Activity log is best-effort — never let a logging failure cascade
+      // and abort the primary mutation. If the room's schema is mid-migration
+      // (e.g. an older room without `activities` seeded), the lazy init in
+      // getOrInitList should handle it, but we still catch defensively in case
+      // Liveblocks rejects the write for any other reason.
+      try {
+        pushActivityMut(input);
+      } catch (err) {
+        console.error("[activity log] write failed", err);
+      }
+    },
+    [pushActivityMut],
+  );
+
   // ── Refresh ───────────────────────────────────────────────────────
   // No-op in Liveblocks mode — storage is always live. Kept to satisfy the
   // interface so callers that call refresh() after non-provider ops still work.
@@ -287,7 +417,14 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
   const addDealMut = useLbMutation(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ({ storage }: any, deal: DealDTO) => {
-      storage.get("deals").push(liveObj(deal));
+      const list = getOrInitList(storage, "deals");
+      list.push(liveObj(deal));
+      console.log(
+        "[addDeal] pushed",
+        deal.id,
+        "→ list.length now",
+        list.length,
+      );
     },
     [],
   ) as (deal: DealDTO) => void;
@@ -337,9 +474,16 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
         updatedAt: now,
       };
       addDealMut(deal);
+      pushActivity({
+        kind: "deal.added",
+        summary: `added deal ${dealDisplayLabel(deal)}`,
+        entityType: "deal",
+        entityId: id,
+        entityLabel: dealDisplayLabel(deal),
+      });
       return id;
     },
-    [addDealMut],
+    [addDealMut, pushActivity],
   );
 
   const updateDealMut = useLbMutation(
@@ -414,10 +558,21 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
         toast.error(`Invalid stage: ${stage}`);
         return false;
       }
+      const prev = deals.find((d) => d.id === id);
       moveDealStageMut(id, stage);
+      if (prev && prev.stage !== stage) {
+        const label = dealDisplayLabel(prev);
+        pushActivity({
+          kind: "deal.stageChanged",
+          summary: `moved ${label} to ${stageDisplay(stage)}`,
+          entityType: "deal",
+          entityId: id,
+          entityLabel: label,
+        });
+      }
       return true;
     },
-    [moveDealStageMut],
+    [deals, moveDealStageMut, pushActivity],
   );
 
   const deleteDealMut = useLbMutation(
@@ -442,10 +597,22 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
 
   const deleteDeal = useCallback(
     async (id: string): Promise<boolean> => {
+      // Snapshot the label BEFORE deletion — otherwise the rail row shows
+      // "deleted untitled deal" because the storage row is already gone by
+      // the time pushActivity runs.
+      const prev = deals.find((d) => d.id === id);
+      const label = dealDisplayLabel(prev);
       deleteDealMut(id);
+      pushActivity({
+        kind: "deal.deleted",
+        summary: `deleted deal ${label}`,
+        entityType: "deal",
+        entityId: id,
+        entityLabel: label,
+      });
       return true;
     },
-    [deleteDealMut],
+    [deals, deleteDealMut, pushActivity],
   );
 
   // Spread-cell mutations. Mirrors lib/server/deals.ts → updateSpreadField.
@@ -690,9 +857,17 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
         updatedAt: now,
       };
       addContactMut(contact);
+      const label = contactDisplayLabel(contact);
+      pushActivity({
+        kind: "contact.added",
+        summary: `added contact ${label}`,
+        entityType: "contact",
+        entityId: id,
+        entityLabel: label,
+      });
       return id;
     },
-    [addContactMut],
+    [addContactMut, pushActivity],
   );
 
   const updateContactMut = useLbMutation(
@@ -726,10 +901,19 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
 
   const deleteContact = useCallback(
     async (id: string): Promise<boolean> => {
+      const prev = contacts.find((c) => c.id === id);
+      const label = contactDisplayLabel(prev);
       deleteContactMut(id);
+      pushActivity({
+        kind: "contact.deleted",
+        summary: `deleted contact ${label}`,
+        entityType: "contact",
+        entityId: id,
+        entityLabel: label,
+      });
       return true;
     },
-    [deleteContactMut],
+    [contacts, deleteContactMut, pushActivity],
   );
 
   // ── TASKS ─────────────────────────────────────────────────────────
@@ -758,9 +942,17 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
         updatedAt: now,
       };
       addTaskMut(task);
+      const label = taskDisplayLabel(task);
+      pushActivity({
+        kind: "task.added",
+        summary: `added task “${label}”`,
+        entityType: "task",
+        entityId: id,
+        entityLabel: label,
+      });
       return id;
     },
-    [addTaskMut],
+    [addTaskMut, pushActivity],
   );
 
   const pushTaskUndo = useCallback(
@@ -800,9 +992,34 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
         });
       }
       updateTaskMut(id, input);
+      // Log only completion/uncompletion transitions — per "major events only"
+      // we skip generic field edits like rename/notes/due-date changes.
+      if (prev && input.completedAt !== undefined) {
+        const wasComplete = !!prev.completedAt;
+        const willBeComplete = input.completedAt !== null;
+        if (!wasComplete && willBeComplete) {
+          const label = taskDisplayLabel(prev);
+          pushActivity({
+            kind: "task.completed",
+            summary: `completed task “${label}”`,
+            entityType: "task",
+            entityId: id,
+            entityLabel: label,
+          });
+        } else if (wasComplete && !willBeComplete) {
+          const label = taskDisplayLabel(prev);
+          pushActivity({
+            kind: "task.uncompleted",
+            summary: `reopened task “${label}”`,
+            entityType: "task",
+            entityId: id,
+            entityLabel: label,
+          });
+        }
+      }
       return true;
     },
-    [tasks, updateTaskMut, pushTaskUndo],
+    [tasks, updateTaskMut, pushTaskUndo, pushActivity],
   );
 
   const deleteTaskMut = useLbMutation(
@@ -817,10 +1034,19 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
 
   const deleteTask = useCallback(
     async (id: string): Promise<boolean> => {
+      const prev = tasks.find((t) => t.id === id);
+      const label = taskDisplayLabel(prev);
       deleteTaskMut(id);
+      pushActivity({
+        kind: "task.deleted",
+        summary: `deleted task “${label}”`,
+        entityType: "task",
+        entityId: id,
+        entityLabel: label,
+      });
       return true;
     },
-    [deleteTaskMut],
+    [tasks, deleteTaskMut, pushActivity],
   );
 
   // ── TEAM MEMBERS ──────────────────────────────────────────────────
@@ -830,7 +1056,7 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
   const ensureTeamMemberMut = useLbMutation(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ({ storage }: any, input: EnsureTeamMemberInput & { color: string }) => {
-      const list = storage.get("teamMembers");
+      const list = getOrInitList(storage, "teamMembers");
       const emailLc = input.email.toLowerCase();
       for (let i = 0; i < list.length; i++) {
         const m = list.get(i);
@@ -857,15 +1083,31 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
 
   const ensureTeamMember = useCallback(
     (input: EnsureTeamMemberInput) => {
+      // Detect "first sign-in" by checking the current roster snapshot. The
+      // mutation itself dedupes by email, but we want to log "joined the team"
+      // only on the initial create — subsequent calls just refresh name/picture.
+      const emailLc = input.email.toLowerCase();
+      const isNew = !teamMembers.some(
+        (m) => (m.email || "").toLowerCase() === emailLc,
+      );
       ensureTeamMemberMut({ ...input, color: fallbackColorRef.current });
+      if (isNew) {
+        pushActivity({
+          kind: "team.memberJoined",
+          summary: `joined the team`,
+          entityType: "team",
+          entityId: emailLc,
+          entityLabel: input.name,
+        });
+      }
     },
-    [ensureTeamMemberMut],
+    [ensureTeamMemberMut, teamMembers, pushActivity],
   );
 
   const removeTeamMemberMut = useLbMutation(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ({ storage }: any, id: string) => {
-      const list = storage.get("teamMembers");
+      const list = getOrInitList(storage, "teamMembers");
       const i = findIndexById(list, id);
       if (i >= 0) list.delete(i);
 
@@ -886,8 +1128,20 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
   ) as (id: string) => void;
 
   const removeTeamMember = useCallback(
-    (id: string) => removeTeamMemberMut(id),
-    [removeTeamMemberMut],
+    (id: string) => {
+      const prev = teamMembers.find((m) => m.id === id);
+      removeTeamMemberMut(id);
+      if (prev) {
+        pushActivity({
+          kind: "team.memberRemoved",
+          summary: `removed ${prev.name} from the team`,
+          entityType: "team",
+          entityId: prev.email,
+          entityLabel: prev.name,
+        });
+      }
+    },
+    [teamMembers, removeTeamMemberMut, pushActivity],
   );
 
   // ── ALLOWED EMAILS (invite list) ──────────────────────────────────
@@ -895,7 +1149,7 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
   const addAllowedEmailMut = useLbMutation(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ({ storage }: any, email: string) => {
-      const list = storage.get("allowedEmails");
+      const list = getOrInitList(storage, "allowedEmails");
       const emailLc = email.toLowerCase();
       for (let i = 0; i < list.length; i++) {
         if ((list.get(i) || "").toLowerCase() === emailLc) return;
@@ -906,14 +1160,32 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
   ) as (email: string) => void;
 
   const addAllowedEmail = useCallback(
-    (email: string) => addAllowedEmailMut(email),
-    [addAllowedEmailMut],
+    (email: string) => {
+      const emailLc = email.toLowerCase();
+      // Skip the log if it's already on the list — the mutation is idempotent
+      // and we don't want duplicate "granted access" rows when the owner
+      // re-enters the same email.
+      const already = allowedEmails.some(
+        (e) => (e || "").toLowerCase() === emailLc,
+      );
+      addAllowedEmailMut(email);
+      if (!already) {
+        pushActivity({
+          kind: "team.allowlistAdded",
+          summary: `granted access to ${emailLc}`,
+          entityType: "team",
+          entityId: emailLc,
+          entityLabel: emailLc,
+        });
+      }
+    },
+    [allowedEmails, addAllowedEmailMut, pushActivity],
   );
 
   const removeAllowedEmailMut = useLbMutation(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ({ storage }: any, email: string) => {
-      const list = storage.get("allowedEmails");
+      const list = getOrInitList(storage, "allowedEmails");
       const emailLc = email.toLowerCase();
       for (let i = list.length - 1; i >= 0; i--) {
         if ((list.get(i) || "").toLowerCase() === emailLc) list.delete(i);
@@ -923,8 +1195,23 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
   ) as (email: string) => void;
 
   const removeAllowedEmail = useCallback(
-    (email: string) => removeAllowedEmailMut(email),
-    [removeAllowedEmailMut],
+    (email: string) => {
+      const emailLc = email.toLowerCase();
+      const wasAllowed = allowedEmails.some(
+        (e) => (e || "").toLowerCase() === emailLc,
+      );
+      removeAllowedEmailMut(email);
+      if (wasAllowed) {
+        pushActivity({
+          kind: "team.allowlistRemoved",
+          summary: `revoked access for ${emailLc}`,
+          entityType: "team",
+          entityId: emailLc,
+          entityLabel: emailLc,
+        });
+      }
+    },
+    [allowedEmails, removeAllowedEmailMut, pushActivity],
   );
 
   // ── TASK ASSIGNMENT ───────────────────────────────────────────────
@@ -945,8 +1232,26 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
   ) as (taskId: string, memberId: string) => void;
 
   const assignTask = useCallback(
-    (taskId: string, memberId: string) => assignTaskMut(taskId, memberId),
-    [assignTaskMut],
+    (taskId: string, memberId: string) => {
+      const prevTask = tasks.find((t) => t.id === taskId);
+      const member = teamMembers.find((m) => m.id === memberId);
+      // The underlying mutation is idempotent; skip the log if the assignee
+      // is already on the task so re-dropping an avatar doesn't spam the rail.
+      const already =
+        prevTask?.assignees?.includes(memberId) ?? false;
+      assignTaskMut(taskId, memberId);
+      if (!already && prevTask && member) {
+        const taskLabel = taskDisplayLabel(prevTask);
+        pushActivity({
+          kind: "task.assigned",
+          summary: `assigned ${member.name} to “${taskLabel}”`,
+          entityType: "task",
+          entityId: taskId,
+          entityLabel: taskLabel,
+        });
+      }
+    },
+    [tasks, teamMembers, assignTaskMut, pushActivity],
   );
 
   const unassignTaskMut = useLbMutation(
@@ -968,8 +1273,23 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
   ) as (taskId: string, memberId: string) => void;
 
   const unassignTask = useCallback(
-    (taskId: string, memberId: string) => unassignTaskMut(taskId, memberId),
-    [unassignTaskMut],
+    (taskId: string, memberId: string) => {
+      const prevTask = tasks.find((t) => t.id === taskId);
+      const member = teamMembers.find((m) => m.id === memberId);
+      const wasAssigned = prevTask?.assignees?.includes(memberId) ?? false;
+      unassignTaskMut(taskId, memberId);
+      if (wasAssigned && prevTask && member) {
+        const taskLabel = taskDisplayLabel(prevTask);
+        pushActivity({
+          kind: "task.unassigned",
+          summary: `unassigned ${member.name} from “${taskLabel}”`,
+          entityType: "task",
+          entityId: taskId,
+          entityLabel: taskLabel,
+        });
+      }
+    },
+    [tasks, teamMembers, unassignTaskMut, pushActivity],
   );
 
   // ── TEMPLATES ─────────────────────────────────────────────────────
@@ -1017,13 +1337,21 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
           updatedAt: now,
         };
         addTemplateMut(template);
+        const label = templateDisplayLabel(template);
+        pushActivity({
+          kind: "template.added",
+          summary: `uploaded template “${label}”`,
+          entityType: "template",
+          entityId: id,
+          entityLabel: label,
+        });
         return id;
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Upload failed");
         return null;
       }
     },
-    [addTemplateMut],
+    [addTemplateMut, pushActivity],
   );
 
   const updateTemplateMut = useLbMutation(
@@ -1085,10 +1413,19 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
 
   const deleteTemplate = useCallback(
     async (id: string): Promise<boolean> => {
+      const prev = templates.find((t) => t.id === id);
+      const label = templateDisplayLabel(prev);
       deleteTemplateMut(id);
+      pushActivity({
+        kind: "template.deleted",
+        summary: `deleted template “${label}”`,
+        entityType: "template",
+        entityId: id,
+        entityLabel: label,
+      });
       return true;
     },
-    [deleteTemplateMut],
+    [templates, deleteTemplateMut, pushActivity],
   );
 
   // ── DOCUMENTS ─────────────────────────────────────────────────────
@@ -1205,6 +1542,17 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
           updatedAt: now,
         };
         addDocumentMut(doc);
+        const dealLabel = dealDisplayLabel(deal);
+        const templateLabel = templateDisplayLabel(template);
+        pushActivity({
+          kind: "document.generated",
+          summary: `generated ${templateLabel} for ${dealLabel}`,
+          entityType: "document",
+          entityId: id,
+          // Store the deal id as the label-supplemental hop so row clicks can
+          // route to the deal detail (no per-document page exists).
+          entityLabel: dealId,
+        });
         return true;
       } catch (err) {
         toast.error(
@@ -1215,7 +1563,7 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
         return false;
       }
     },
-    [deals, templates, contacts, addDocumentMut],
+    [deals, templates, contacts, addDocumentMut, pushActivity],
   );
 
   const setDocumentStatusMut = useLbMutation(
@@ -1306,6 +1654,7 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
     removeAllowedEmail,
     assignTask,
     unassignTask,
+    activities,
     undo,
     canUndo: canUndoState,
   };

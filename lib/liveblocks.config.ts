@@ -60,6 +60,7 @@ export function useLbUpdateMyPresence() {
 // Storage shape for Centurion CRM. One LiveList per top-level collection.
 // Tasks, documents, templates, and contacts are kept flat; deals own properties via embedded fields.
 // teamMembers + allowedEmails were added with Google auth — see contexts/AuthContext.tsx.
+// activities is an append-only audit stream (capped at ACTIVITY_LIMIT in the provider).
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function createInitialStorage(): any {
   return {
@@ -70,6 +71,7 @@ export function createInitialStorage(): any {
     documents: new LiveList([]),
     teamMembers: new LiveList([]),
     allowedEmails: new LiveList([]),
+    activities: new LiveList([]),
   };
 }
 

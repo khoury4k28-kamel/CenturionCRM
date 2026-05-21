@@ -12,6 +12,51 @@ export type TeamMember = {
   addedAt: number;     // epoch ms
 };
 
+// Activity log — append-only stream of meaningful mutations. Each entry is
+// self-contained (actor + entity info frozen at log time) so the rail still
+// renders correctly after the underlying user or entity is removed.
+export type ActivityKind =
+  | "task.added"
+  | "task.completed"
+  | "task.uncompleted"
+  | "task.deleted"
+  | "task.assigned"
+  | "task.unassigned"
+  | "deal.added"
+  | "deal.stageChanged"
+  | "deal.deleted"
+  | "contact.added"
+  | "contact.deleted"
+  | "template.added"
+  | "template.deleted"
+  | "document.generated"
+  | "team.memberJoined"
+  | "team.memberRemoved"
+  | "team.allowlistAdded"
+  | "team.allowlistRemoved";
+
+export type ActivityEntityType =
+  | "deal"
+  | "contact"
+  | "task"
+  | "template"
+  | "document"
+  | "team";
+
+export type ActivityEntry = {
+  id: string;
+  ts: number;                       // epoch ms — Date.now() at log time
+  actorEmail: string;               // lowercase, frozen
+  actorName: string;                // frozen — survives member removal
+  actorColor: string;               // hex, frozen
+  actorPicture?: string;            // Google photo URL, frozen
+  kind: ActivityKind;
+  summary: string;                  // pre-rendered prose for the rail
+  entityType?: ActivityEntityType;
+  entityId?: string;
+  entityLabel?: string;             // frozen at log time
+};
+
 export const DEAL_STAGES = [
   "NEW_LEAD",
   "RESEARCHING",

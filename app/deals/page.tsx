@@ -2,7 +2,9 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { Plus } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
+import { Button } from "@/components/ui/button";
 import { SpreadTable } from "@/components/spread/SpreadTable";
 import { SpreadStore } from "@/components/spread/SpreadStore";
 import type { SpreadDeal } from "@/components/spread/types";
@@ -10,6 +12,7 @@ import { useData } from "@/contexts/DataContext";
 import DealPanelContext from "@/contexts/DealPanelContext";
 import { SidePanel } from "@/components/ui/side-panel";
 import { DealDetailPanel } from "@/components/deals/DealDetailPanel";
+import { DealCreateModal } from "@/components/deals/DealCreateModal";
 
 const IN_ESCROW_STAGE = "IN_ESCROW";
 const HIDDEN_STAGES = new Set(["CLOSED", "DEAD"]);
@@ -41,6 +44,13 @@ function SpreadPageInner() {
   const [selectedId, setSelectedId] = useState<string | null>(
     () => searchParams.get("selectedId"),
   );
+
+  // Create-modal state lives at the page level so a single "+ Add deal"
+  // button in the page header drives one modal — no per-section duplication.
+  const [createOpen, setCreateOpen] = useState(false);
+  // After a successful create, we hold the new id briefly so an effect can
+  // scroll its row into view once the spread re-renders with the new data.
+  const [pendingScrollId, setPendingScrollId] = useState<string | null>(null);
 
   // Mirror state → URL (?selectedId=...) so reload / link sharing reopens
   // the same panel. `scroll: false` keeps the spread's scroll position.
@@ -91,6 +101,30 @@ function SpreadPageInner() {
     return { all, activeIds, inEscrowIds, flagged };
   }, [deals]);
 
+  // Scroll to a newly-created deal once the SpreadStore re-renders with the
+  // new row in the DOM. SpreadStore re-keys on the deal-set signature
+  // (see `key={...}` below), so the new row isn't in the DOM until after
+  // this effect re-runs with the updated `view`. The small setTimeout lets
+  // the remounted tbody paint before we query for the row.
+  useEffect(() => {
+    if (!pendingScrollId) return;
+    const t = setTimeout(() => {
+      const el = document.querySelector<HTMLElement>(
+        `tr[data-deal-id="${pendingScrollId}"]`,
+      );
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.style.transition = "background-color 0.4s";
+        el.style.backgroundColor = "color-mix(in oklab, var(--color-accent) 18%, transparent)";
+        setTimeout(() => {
+          el.style.backgroundColor = "";
+        }, 1500);
+      }
+      setPendingScrollId(null);
+    }, 80);
+    return () => clearTimeout(t);
+  }, [pendingScrollId, view]);
+
   if (!isLoaded) {
     return (
       <>
@@ -108,6 +142,16 @@ function SpreadPageInner() {
         description={`${activeIds.length} active · ${inEscrowIds.length} in escrow${
           flagged ? ` · ${flagged} flagged for Richard` : ""
         }`}
+        actions={
+          <Button
+            variant="primary"
+            size="md"
+            onClick={() => setCreateOpen(true)}
+          >
+            <Plus size={14} strokeWidth={2} />
+            Add deal
+          </Button>
+        }
       />
       <SpreadStore
         // Keying on the deal-set signature forces a fresh SpreadStore (with a
@@ -128,6 +172,11 @@ function SpreadPageInner() {
           <DealDetailPanel dealId={selectedId} onClose={closePanel} />
         </SidePanel>
       </SpreadStore>
+      <DealCreateModal
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onCreated={(id) => setPendingScrollId(id)}
+      />
     </DealPanelContext.Provider>
   );
 }

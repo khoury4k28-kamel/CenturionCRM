@@ -3,7 +3,8 @@
 import { type ReactNode, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { useData, type DealCreateInput } from "@/contexts/DataContext";
+import { useData } from "@/contexts/DataContext";
+import { dealCreatePayloadFromFormData } from "@/lib/forms/dealCreatePayload";
 
 export function DealCreateForm({
   children,
@@ -18,22 +19,7 @@ export function DealCreateForm({
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    const body: DealCreateInput = {
-      address: String(fd.get("address") ?? "").trim(),
-      city: String(fd.get("city") ?? "").trim() || null,
-      state: String(fd.get("state") ?? "").trim() || null,
-      zip: String(fd.get("zip") ?? "").trim() || null,
-      bedrooms: String(fd.get("bedrooms") ?? "") || null,
-      bathrooms: String(fd.get("bathrooms") ?? "") || null,
-      sqft: String(fd.get("sqft") ?? "") || null,
-      lotSize: String(fd.get("lotSize") ?? "") || null,
-      yearBuilt: String(fd.get("yearBuilt") ?? "") || null,
-      askingPrice: String(fd.get("askingPrice") ?? "") || null,
-      ourOffer: String(fd.get("ourOffer") ?? "") || null,
-      source: String(fd.get("source") ?? "").trim() || null,
-      notes: String(fd.get("notes") ?? "").trim() || null,
-    };
+    const body = dealCreatePayloadFromFormData(new FormData(e.currentTarget));
 
     startTransition(async () => {
       const id = await addDeal(body);

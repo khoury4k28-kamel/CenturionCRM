@@ -5,18 +5,21 @@ import { toast } from "sonner";
 import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Textarea } from "@/components/ui/input";
-import { useData, type DealCreateInput } from "@/contexts/DataContext";
+import { useData } from "@/contexts/DataContext";
+import { dealCreatePayloadFromFormData } from "@/lib/forms/dealCreatePayload";
 
 export function DealCreateModal({
   open,
   onOpenChange,
-  section,
+  onCreated,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  section?: "ACTIVES" | "IN_ESCROW";
+  // Called with the new deal's id after a successful create. Used by the
+  // pipeline page to scroll the new row into view + highlight it.
+  onCreated?: (id: string) => void;
 }) {
-  const { addDeal, moveDealStage } = useData();
+  const { addDeal } = useData();
   const [pending, startTransition] = useTransition();
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -31,49 +34,24 @@ export function DealCreateModal({
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    const body: DealCreateInput = {
-      address: String(fd.get("address") ?? "").trim(),
-      city: String(fd.get("city") ?? "").trim() || null,
-      state: String(fd.get("state") ?? "").trim() || null,
-      zip: String(fd.get("zip") ?? "").trim() || null,
-      bedrooms: String(fd.get("bedrooms") ?? "") || null,
-      bathrooms: String(fd.get("bathrooms") ?? "") || null,
-      sqft: String(fd.get("sqft") ?? "") || null,
-      lotSize: String(fd.get("lotSize") ?? "") || null,
-      askingPrice: String(fd.get("askingPrice") ?? "") || null,
-      ourOffer: String(fd.get("ourOffer") ?? "") || null,
-      source: String(fd.get("source") ?? "").trim() || null,
-      notes: String(fd.get("notes") ?? "").trim() || null,
-    };
+    const body = dealCreatePayloadFromFormData(new FormData(e.currentTarget));
 
     startTransition(async () => {
       const id = await addDeal(body);
       if (!id) return;
-      // New deals come in as NEW_LEAD, which appears in ACTIVES. Only need to
-      // bump stage if the user added it under the IN_ESCROW section.
-      // Intentionally does NOT call emitStageChanged — that signal is for
-      // user-driven stage navigation (drag, dropdown, cell edit), not the
-      // programmatic auto-bump during deal creation.
-      if (section === "IN_ESCROW") {
-        await moveDealStage(id, "IN_ESCROW");
-      }
+      // Every new deal lands in NEW_LEAD (ACTIVES). Stage transitions are an
+      // explicit user action via the row's stage chip — keeps "what schema
+      // does this use" orthogonal to "which list does it appear in."
       toast.success("Deal created");
+      onCreated?.(id);
       close();
     });
   }
 
-  const heading =
-    section === "IN_ESCROW"
-      ? "New in-escrow property"
-      : section === "ACTIVES"
-        ? "New active property"
-        : "New deal";
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogHeader
-        title={heading}
+        title="New deal"
         description="Start with the property address — everything else can be filled in as you learn it."
       />
       <form key={formKey} ref={formRef} onSubmit={onSubmit}>

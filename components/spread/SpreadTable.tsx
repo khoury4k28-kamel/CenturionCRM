@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { ChevronRight, Plus } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SpreadCell } from "./SpreadCell";
+import { RowStageChip } from "./RowStageChip";
 import { useSpreadRow, useSpreadState } from "./SpreadStore";
 import {
   COLUMN_IDS,
@@ -11,18 +11,20 @@ import {
   COLUMN_WIDTHS,
   COLUMN_ALIGN,
 } from "./types";
-import { DealCreateModal } from "@/components/deals/DealCreateModal";
+import type { DealStage } from "@/lib/types";
 import { useDealPanel } from "@/contexts/DealPanelContext";
 
 // Re-export the type for backward compat with `app/deals/page.tsx`.
 export type { SpreadDeal } from "./types";
 
-// The rendered table has one extra leading <td> for the row-expand button
-// that opens the deal panel. It sits OUTSIDE the COLUMN_IDS model so the
-// SpreadStore's keyboard navigation (Tab / arrows) skips it — there's no
-// useful in-cell action to focus.
+// Two leading <td>s sit OUTSIDE the COLUMN_IDS model so the SpreadStore's
+// keyboard navigation (Tab / arrows) skips them — neither has a useful
+// in-cell text-editing action to focus:
+//   1. Expand chevron — opens the slide-out detail panel.
+//   2. Stage chip    — moves the deal between pipeline stages.
 const EXPAND_COL_WIDTH = 28;
-const TABLE_COLUMN_COUNT = COLUMN_IDS.length + 1;
+const STAGE_COL_WIDTH = 118;
+const TABLE_COLUMN_COUNT = COLUMN_IDS.length + 2;
 
 export function SpreadTable() {
   const { rowOrder } = useSpreadState();
@@ -33,6 +35,7 @@ export function SpreadTable() {
         <table className="w-full border-collapse text-sm table-fixed">
           <colgroup>
             <col style={{ width: `${EXPAND_COL_WIDTH}px` }} />
+            <col style={{ width: `${STAGE_COL_WIDTH}px` }} />
             {COLUMN_IDS.map((col) => {
               const w = COLUMN_WIDTHS[col];
               return <col key={col} style={w === null ? undefined : { width: `${w}px` }} />;
@@ -41,6 +44,7 @@ export function SpreadTable() {
           <thead className="sticky top-0 z-20">
             <tr className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] border-b border-[var(--color-panel-border)] bg-[var(--color-panel)]">
               <th aria-hidden="true" />
+              <th className="font-medium px-2 py-2 text-center">Stage</th>
               {COLUMN_IDS.map((col) => (
                 <th
                   key={col}
@@ -58,16 +62,18 @@ export function SpreadTable() {
           </thead>
           <tbody>
             <SectionHeader label="ACTIVES" count={rowOrder.actives.length} />
-            {rowOrder.actives.map((id) => (
-              <SpreadRow key={id} dealId={id} />
-            ))}
-            <NewRow section="ACTIVES" />
+            {rowOrder.actives.length === 0 ? (
+              <EmptyRow message="No active deals yet — use “+ Add deal” above." />
+            ) : (
+              rowOrder.actives.map((id) => <SpreadRow key={id} dealId={id} />)
+            )}
 
             <SectionHeader label="IN ESCROW" count={rowOrder.inEscrow.length} top />
-            {rowOrder.inEscrow.map((id) => (
-              <SpreadRow key={id} dealId={id} />
-            ))}
-            <NewRow section="IN_ESCROW" />
+            {rowOrder.inEscrow.length === 0 ? (
+              <EmptyRow message="No deals in escrow — move a deal here from its stage chip." />
+            ) : (
+              rowOrder.inEscrow.map((id) => <SpreadRow key={id} dealId={id} />)
+            )}
           </tbody>
         </table>
       </div>
@@ -75,6 +81,22 @@ export function SpreadTable() {
         click to edit · enter saves & moves down · tab moves right · esc cancels · ⌘Z undo
       </div>
     </div>
+  );
+}
+
+// ─── Empty state row ──────────────────────────────────────────────────
+
+function EmptyRow({ message }: { message: string }) {
+  return (
+    <tr>
+      <td aria-hidden="true" />
+      <td
+        colSpan={TABLE_COLUMN_COUNT - 1}
+        className="px-3 py-3 text-xs italic text-[var(--color-text-faint)] text-center"
+      >
+        {message}
+      </td>
+    </tr>
   );
 }
 
@@ -113,6 +135,7 @@ function SpreadRow({ dealId }: { dealId: string }) {
   const isActive = selectedId === dealId;
   return (
     <tr
+      data-deal-id={dealId}
       className={cn(
         "border-b border-[var(--color-panel-border)] last:border-b-0",
         row.flaggedForReview && "bg-[var(--color-highlight)] text-[var(--color-highlight-fg)]",
@@ -141,6 +164,9 @@ function SpreadRow({ dealId }: { dealId: string }) {
           />
         </button>
       </td>
+      <td className="p-0 align-middle text-center">
+        <RowStageChip dealId={dealId} stage={row.stage as DealStage} />
+      </td>
       {COLUMN_IDS.map((col) => (
         <td key={col} className="p-0 align-top">
           <SpreadCell dealId={dealId} col={col} />
@@ -150,31 +176,3 @@ function SpreadRow({ dealId }: { dealId: string }) {
   );
 }
 
-// ─── New-row trigger — opens DealCreateModal. The provider's addDeal()
-//     refreshes deals[] on success → SpreadStore re-keys → new row appears. ──
-
-function NewRow({ section }: { section: "ACTIVES" | "IN_ESCROW" }) {
-  const [open, setOpen] = useState(false);
-  const label = `+ Add new ${section === "IN_ESCROW" ? "escrow" : "active"} property…`;
-
-  return (
-    <>
-      <tr className="border-b border-[var(--color-panel-border)] last:border-b-0">
-        <td aria-hidden="true" />
-        <td className="px-1 py-1 text-center text-[var(--color-text-faint)]">
-          <Plus size={12} strokeWidth={1.5} />
-        </td>
-        <td colSpan={TABLE_COLUMN_COUNT - 2} className="px-1 py-1">
-          <button
-            type="button"
-            onClick={() => setOpen(true)}
-            className="w-full text-left bg-transparent border-none outline-none px-2 py-1 text-xs text-[var(--color-text-faint)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-hover)] cursor-pointer rounded-sm transition-colors"
-          >
-            {label}
-          </button>
-        </td>
-      </tr>
-      <DealCreateModal open={open} onOpenChange={setOpen} section={section} />
-    </>
-  );
-}

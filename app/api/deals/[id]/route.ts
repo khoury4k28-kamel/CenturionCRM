@@ -11,7 +11,7 @@ import {
   type DealUpdateInput,
   type UpdateAddressInput,
 } from "@/lib/server/deals";
-import { jsonOk, jsonError, notFound, parseBody } from "@/lib/server/route-helpers";
+import { jsonOk, jsonError, notFound, parseBody, withErrorHandler } from "@/lib/server/route-helpers";
 import type { DealStage, SpreadField } from "@/lib/types";
 
 type Params = { params: Promise<{ id: string }> };
@@ -26,7 +26,7 @@ type PatchBody =
   | { kind: "owed"; raw: string }
   | ({ kind: "address" } & UpdateAddressInput);
 
-export async function PATCH(request: Request, { params }: Params) {
+export const PATCH = withErrorHandler(async (request: Request, { params }: Params) => {
   const { id } = await params;
   const body = await parseBody<PatchBody>(request);
 
@@ -68,11 +68,11 @@ export async function PATCH(request: Request, { params }: Params) {
     default:
       return jsonError(`Unknown patch kind: ${(body as { kind: string }).kind}`);
   }
-}
+});
 
-export async function DELETE(_req: Request, { params }: Params) {
+export const DELETE = withErrorHandler(async (_req: Request, { params }: Params) => {
   const { id } = await params;
   const ok = await deleteDeal(id);
   if (!ok) return notFound("Deal");
   return jsonOk({ deleted: true });
-}
+});

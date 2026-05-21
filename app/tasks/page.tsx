@@ -3,6 +3,7 @@
 import { PageHeader } from "@/components/ui/page-header";
 import { useData } from "@/contexts/DataContext";
 import { TasksBoard } from "@/components/tasks/TasksBoard";
+import ActivityRailMount from "@/components/activity/ActivityRailMount";
 
 export default function TasksPage() {
   const { isLoaded } = useData();
@@ -23,6 +24,11 @@ export default function TasksPage() {
         description="Capture quickly. Today first. Linked to deals."
       />
       <TasksBoard />
+      {/* Activity transcript lives only on the Tasks page — the rail is
+          fixed-positioned so it visually anchors to the viewport's right edge
+          regardless of where it mounts in the tree. Gated on isLiveblocksEnabled
+          inside the Mount wrapper, so local single-user mode stays clean. */}
+      <ActivityRailMount />
     </>
   );
 }

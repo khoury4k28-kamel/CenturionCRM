@@ -26,6 +26,7 @@ import type {
   ContactType,
   DocStatus,
   TeamMember,
+  ActivityEntry,
 } from "@/lib/types";
 
 // ── Mutation input shapes ────────────────────────────────────────────────
@@ -209,6 +210,13 @@ export interface DataContextType {
   // AssigneesSection pills.
   assignTask: (taskId: string, memberId: string) => void;
   unassignTask: (taskId: string, memberId: string) => void;
+
+  // ── Activity log ─────────────────────────────────────────
+  // Append-only stream of meaningful mutations, written automatically by the
+  // provider whenever a logged action runs. Read-only from consumers — there
+  // is no public mutator. In hosted mode this is a shared LiveList; in local
+  // single-user mode it stays an empty array.
+  activities: ActivityEntry[];
 
   // ── Undo ─────────────────────────────────────────────────
   // Tasks-only for now (Mālama parity covers tasks + investors; Centurion's
