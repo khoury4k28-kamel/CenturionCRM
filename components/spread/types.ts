@@ -1,5 +1,5 @@
-// Shared types & column model for the Spread table.
-// Used by SpreadStore, SpreadTable, SpreadCell, AddressPopover.
+// Shared types & column model for the pipeline list.
+// Used by SpreadStore (state/actions) and SpreadTable (rendering).
 
 export type SpreadDeal = {
   id: string;

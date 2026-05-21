@@ -227,7 +227,7 @@ export function DealDetailPanel({
                 activeColor="var(--color-highlight)"
                 activeFg="var(--color-highlight-fg)"
               >
-                Flag for Richard
+                Flag
               </ToggleChip>
               <ToggleChip
                 active={deal.weOwn}

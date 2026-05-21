@@ -175,7 +175,10 @@ export default function ActivityRail() {
   return (
     <aside
       aria-label="Activity transcript"
-      className="fixed top-4 right-4 bottom-4 z-40 flex flex-col pointer-events-none"
+      // top-20 clears the TopRightPanel pill (top-5 + ~36px pill height = ~56px
+      // bottom edge); 80px from the top leaves a ~24px gap so the rail header
+      // doesn't tuck immediately under the avatar/settings chip.
+      className="fixed top-20 right-4 bottom-4 z-40 flex flex-col pointer-events-none"
       style={{ width: open ? RAIL_OPEN_WIDTH : RAIL_CLOSED_WIDTH }}
     >
       <div
