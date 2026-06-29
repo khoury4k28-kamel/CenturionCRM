@@ -31,6 +31,9 @@ jobs:
           mv app/_api_excluded app/api
         env:
           STATIC_EXPORT: "1"
+          # GitHub Pages project-site base path, inlined into the client bundle so
+          # browser code (e.g. the PDF worker URL) resolves under /CenturionCRM.
+          NEXT_PUBLIC_BASE_PATH: "/CenturionCRM"
           NEXT_PUBLIC_LIVEBLOCKS_PUBLIC_KEY: ${{ secrets.LIVEBLOCKS_PUBLIC_KEY }}
           # Google sign-in. NEXT_PUBLIC_* values get inlined into the client
           # bundle at build time — store them as repo secrets, not in the repo.

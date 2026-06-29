@@ -10,8 +10,10 @@ import type { Binding } from "@/lib/types";
 import { useData } from "@/contexts/DataContext";
 
 // Match the basePath pattern in app/layout.tsx — static export ships under
-// /CenturionCRM on GitHub Pages; local dev runs at the root.
-const BASE_PATH = process.env.STATIC_EXPORT === "1" ? "/CenturionCRM" : "";
+// /CenturionCRM on GitHub Pages; local dev runs at the root. Must be NEXT_PUBLIC_*
+// so it is inlined into the browser bundle: a bare STATIC_EXPORT reads as undefined
+// in client code, which silently dropped the base path and 404'd the PDF worker.
+const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
 type DragState = {
   active: boolean;
