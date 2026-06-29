@@ -18,6 +18,7 @@ import DataContext, {
   type TaskUpdateInput,
   type TemplateCreateInput,
   type TemplateUpdateInput,
+  type LogActivityInput,
 } from "./DataContext";
 import { apiCall } from "@/lib/api-client";
 import type {
@@ -28,7 +29,21 @@ import type {
   TemplateDTO,
   DocumentDTO,
 } from "@/lib/dto";
-import type { DealStage, SpreadField, DocStatus } from "@/lib/types";
+import type {
+  DealStage,
+  SpreadField,
+  DocStatus,
+  ActivityEntry,
+  ActivityKind,
+  ActivityEntityType,
+} from "@/lib/types";
+import {
+  dealDisplayLabel,
+  taskDisplayLabel,
+  stageDisplay,
+  manualActivitySummary,
+} from "@/lib/activity-labels";
+import { unlinkedContactWarning } from "@/lib/template-engine/binding-checks";
 
 // ── Undo stack ──────────────────────────────────────────────────────────
 // Per Mālama parity, undo is limited to a single entity type (tasks for
@@ -42,6 +57,38 @@ interface UndoEntry {
 }
 const UNDO_LIMIT = 20;
 
+// ── Local activity log ──────────────────────────────────────────────────
+// Local Prisma mode is single-user and has no Liveblocks stream, but the
+// Activity & Tasks UI and the deal-panel timeline still need to work in dev.
+// We keep a client-side log in localStorage so manually-logged calls/notes and
+// a handful of auto events survive reloads. Production (Liveblocks) persists the
+// real shared stream; this is the dev-mode analog.
+const ACTIVITY_STORAGE_KEY = "centurion.activities.local";
+const ACTIVITY_LIMIT = 500;
+// Local mode has no signed-in user, so attribute entries to a stable stub actor.
+const LOCAL_ACTOR = {
+  email: "local@centurion",
+  name: "You",
+  color: "#6b7280",
+} as const;
+
+function newActivityId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+function readInitialActivities(): ActivityEntry[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(ACTIVITY_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as ActivityEntry[]) : [];
+  } catch {
+    return [];
+  }
+}
+
 // ── Provider ────────────────────────────────────────────────────────────
 
 export function BackendDataProvider({ children }: { children: ReactNode }) {
@@ -50,7 +97,78 @@ export function BackendDataProvider({ children }: { children: ReactNode }) {
   const [tasks, setTasks] = useState<TaskDTO[]>([]);
   const [templates, setTemplates] = useState<TemplateDTO[]>([]);
   const [documents, setDocuments] = useState<DocumentDTO[]>([]);
+  const [activities, setActivities] = useState<ActivityEntry[]>(readInitialActivities);
   const [isLoaded, setIsLoaded] = useState(false);
+
+  // Persist the local activity log so the timeline survives reloads in dev.
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(ACTIVITY_STORAGE_KEY, JSON.stringify(activities));
+    } catch {
+      // Storage may be disabled (Safari private mode) — keep in-memory state.
+    }
+  }, [activities]);
+
+  // Append an entry to the local activity log. Used by logActivity (manual
+  // entries) and by a few high-value auto events below so the dev feed isn't
+  // empty. Mirrors the entry shape LiveblocksDataProvider writes.
+  const pushLocalActivity = useCallback(
+    (input: {
+      kind: ActivityKind;
+      summary: string;
+      body?: string;
+      dealId?: string;
+      entityType?: ActivityEntityType;
+      entityId?: string;
+      entityLabel?: string;
+    }) => {
+      const entry: ActivityEntry = {
+        id: newActivityId(),
+        ts: Date.now(),
+        actorEmail: LOCAL_ACTOR.email,
+        actorName: LOCAL_ACTOR.name,
+        actorColor: LOCAL_ACTOR.color,
+        kind: input.kind,
+        summary: input.summary,
+        body: input.body,
+        dealId: input.dealId,
+        entityType: input.entityType,
+        entityId: input.entityId,
+        entityLabel: input.entityLabel,
+      };
+      setActivities((cur) => [...cur, entry].slice(-ACTIVITY_LIMIT));
+    },
+    [],
+  );
+
+  const logActivity = useCallback(
+    async (input: LogActivityInput): Promise<boolean> => {
+      const body = input.body?.trim();
+      if (!body) {
+        toast.error("Write something to log");
+        return false;
+      }
+      const deal = input.dealId
+        ? deals.find((d) => d.id === input.dealId)
+        : null;
+      pushLocalActivity({
+        kind: input.kind,
+        summary: manualActivitySummary(input.kind),
+        body,
+        dealId: input.dealId ?? undefined,
+        entityType: input.dealId ? "deal" : undefined,
+        entityId: input.dealId ?? undefined,
+        entityLabel: deal ? dealDisplayLabel(deal) : undefined,
+      });
+      return true;
+    },
+    [deals, pushLocalActivity],
+  );
+
+  const deleteActivity = useCallback(async (id: string): Promise<boolean> => {
+    setActivities((cur) => cur.filter((a) => a.id !== id));
+    return true;
+  }, []);
 
   // Undo stack lives in a ref so callbacks can read the latest stack without
   // closing over stale state. `canUndoState` mirrors the stack length so render
@@ -126,9 +244,17 @@ export function BackendDataProvider({ children }: { children: ReactNode }) {
       }
       // Refresh to pick up the full DTO shape (server has computed fields).
       await loadAll();
+      pushLocalActivity({
+        kind: "deal.added",
+        summary: `added deal ${input.address}`,
+        dealId: result.data.id,
+        entityType: "deal",
+        entityId: result.data.id,
+        entityLabel: input.address,
+      });
       return result.data.id;
     },
-    [loadAll],
+    [loadAll, pushLocalActivity],
   );
 
   const updateDeal = useCallback(
@@ -151,6 +277,17 @@ export function BackendDataProvider({ children }: { children: ReactNode }) {
     async (id: string, stage: DealStage): Promise<boolean> => {
       const prev = deals.find((d) => d.id === id);
       setDeals((cur) => cur.map((d) => (d.id === id ? { ...d, stage } : d)));
+      if (prev && prev.stage !== stage) {
+        const label = dealDisplayLabel(prev);
+        pushLocalActivity({
+          kind: "deal.stageChanged",
+          summary: `moved ${label} to ${stageDisplay(stage)}`,
+          dealId: id,
+          entityType: "deal",
+          entityId: id,
+          entityLabel: label,
+        });
+      }
       return apiWithToast(
         `/deals/${id}`,
         { method: "PATCH", body: JSON.stringify({ kind: "stage", stage }) },
@@ -160,12 +297,13 @@ export function BackendDataProvider({ children }: { children: ReactNode }) {
         },
       );
     },
-    [deals, apiWithToast],
+    [deals, apiWithToast, pushLocalActivity],
   );
 
   const deleteDeal = useCallback(
     async (id: string): Promise<boolean> => {
       const prev = deals;
+      const target = deals.find((d) => d.id === id);
       setDeals((cur) => cur.filter((d) => d.id !== id));
       // Cascading-deletes on the server take care of related tasks/documents;
       // refresh to pull them out of local state too.
@@ -175,10 +313,21 @@ export function BackendDataProvider({ children }: { children: ReactNode }) {
         "Failed to delete deal",
         () => setDeals(prev),
       );
-      if (ok) await loadAll();
+      if (ok) {
+        await loadAll();
+        const label = dealDisplayLabel(target);
+        pushLocalActivity({
+          kind: "deal.deleted",
+          summary: `deleted deal ${label}`,
+          dealId: id,
+          entityType: "deal",
+          entityId: id,
+          entityLabel: label,
+        });
+      }
       return ok;
     },
-    [deals, apiWithToast, loadAll],
+    [deals, apiWithToast, loadAll, pushLocalActivity],
   );
 
   // Spread-cell endpoints: SpreadStore stays the source of truth for the
@@ -407,9 +556,17 @@ export function BackendDataProvider({ children }: { children: ReactNode }) {
         return null;
       }
       await loadAll();
+      pushLocalActivity({
+        kind: "task.added",
+        summary: `added task “${input.title}”`,
+        dealId: input.dealId ?? undefined,
+        entityType: "task",
+        entityId: result.data.id,
+        entityLabel: input.title,
+      });
       return result.data.id;
     },
-    [loadAll],
+    [loadAll, pushLocalActivity],
   );
 
   const pushTaskUndo = useCallback((entry: UndoEntry) => {
@@ -433,6 +590,32 @@ export function BackendDataProvider({ children }: { children: ReactNode }) {
           t.id === id ? { ...t, ...input, updatedAt: new Date().toISOString() } : t,
         ),
       );
+      // Log only completion/uncompletion transitions — generic edits (rename,
+      // due-date, notes) aren't interesting enough for the activity stream.
+      if (prev && input.completedAt !== undefined) {
+        const wasComplete = !!prev.completedAt;
+        const willBeComplete = input.completedAt !== null;
+        const label = taskDisplayLabel(prev);
+        if (!wasComplete && willBeComplete) {
+          pushLocalActivity({
+            kind: "task.completed",
+            summary: `completed task “${label}”`,
+            dealId: prev.dealId ?? undefined,
+            entityType: "task",
+            entityId: id,
+            entityLabel: label,
+          });
+        } else if (wasComplete && !willBeComplete) {
+          pushLocalActivity({
+            kind: "task.uncompleted",
+            summary: `reopened task “${label}”`,
+            dealId: prev.dealId ?? undefined,
+            entityType: "task",
+            entityId: id,
+            entityLabel: label,
+          });
+        }
+      }
       return apiWithToast(
         `/tasks/${id}`,
         { method: "PATCH", body: JSON.stringify(input) },
@@ -442,7 +625,7 @@ export function BackendDataProvider({ children }: { children: ReactNode }) {
         },
       );
     },
-    [tasks, apiWithToast, pushTaskUndo],
+    [tasks, apiWithToast, pushTaskUndo, pushLocalActivity],
   );
 
   const deleteTask = useCallback(
@@ -526,6 +709,17 @@ export function BackendDataProvider({ children }: { children: ReactNode }) {
 
   const generateDocument = useCallback(
     async (dealId: string, templateId: string): Promise<boolean> => {
+      // Warn before generating if the template binds seller/realtor fields the
+      // deal doesn't have linked — otherwise those values silently render blank.
+      const template = templates.find((t) => t.id === templateId);
+      const deal = deals.find((d) => d.id === dealId);
+      if (template && deal) {
+        const warning = unlinkedContactWarning(template.bindings, {
+          hasSeller: !!(deal.sellerId && contacts.some((c) => c.id === deal.sellerId)),
+          hasRealtor: !!(deal.realtorId && contacts.some((c) => c.id === deal.realtorId)),
+        });
+        if (warning && !confirm(warning)) return false;
+      }
       const result = await apiCall<{ id: string }>("/documents/generate", {
         method: "POST",
         body: JSON.stringify({ dealId, templateId }),
@@ -535,9 +729,17 @@ export function BackendDataProvider({ children }: { children: ReactNode }) {
         return false;
       }
       await loadAll();
+      pushLocalActivity({
+        kind: "document.generated",
+        summary: `generated ${template?.name ?? "document"} for ${dealDisplayLabel(deal)}`,
+        dealId,
+        entityType: "document",
+        entityId: result.data.id,
+        entityLabel: dealId,
+      });
       return true;
     },
-    [loadAll],
+    [loadAll, deals, templates, contacts, pushLocalActivity],
   );
 
   const setDocumentStatus = useCallback(
@@ -646,9 +848,11 @@ export function BackendDataProvider({ children }: { children: ReactNode }) {
     removeAllowedEmail: () => {},
     assignTask: () => {},
     unassignTask: () => {},
-    // Activity log is hosted-mode only — the rail itself is gated on
-    // isLiveblocksEnabled so it never mounts in local dev.
-    activities: [],
+    // Local activity log — persisted to localStorage. Carries manually-logged
+    // calls/notes plus a few auto events so the timeline works in dev.
+    activities,
+    logActivity,
+    deleteActivity,
     undo,
     canUndo,
   };

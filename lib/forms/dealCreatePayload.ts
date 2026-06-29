@@ -19,6 +19,15 @@ export function dealCreatePayloadFromFormData(fd: FormData): DealCreateInput {
     yearBuilt: num("yearBuilt"),
     askingPrice: num("askingPrice"),
     ourOffer: num("ourOffer"),
+    // Deal-progression fields (all optional). Dates come from <input type="date">
+    // as YYYY-MM-DD; weOwn is a checkbox (absent when unchecked).
+    agreedPrice: num("agreedPrice"),
+    listPrice: num("listPrice"),
+    acceptanceDate: str("acceptanceDate"),
+    expirationDate: str("expirationDate"),
+    termOfAgreement: str("termOfAgreement"),
+    amountOwed: num("amountOwed"),
+    weOwn: fd.get("weOwn") != null,
     source: str("source"),
     notes: str("notes"),
   };

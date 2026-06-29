@@ -27,6 +27,7 @@ import type {
   DocStatus,
   TeamMember,
   ActivityEntry,
+  ManualActivityKind,
 } from "@/lib/types";
 
 // ── Mutation input shapes ────────────────────────────────────────────────
@@ -43,6 +44,16 @@ export type DealCreateInput = {
   yearBuilt?: number | string | null;
   askingPrice?: number | string | null;
   ourOffer?: number | string | null;
+  // Deal-progression fields — optional at create time ("fill in as you learn
+  // it"), but now collectible up front so a new row can show its pricing/terms
+  // in the pipeline immediately (these map to the pipeline's displayed columns).
+  agreedPrice?: number | string | null;
+  listPrice?: number | string | null;
+  acceptanceDate?: string | null; // ISO date (YYYY-MM-DD)
+  expirationDate?: string | null; // ISO date (YYYY-MM-DD)
+  termOfAgreement?: string | null;
+  amountOwed?: number | string | null;
+  weOwn?: boolean;
   source?: string | null;
   notes?: string | null;
 };
@@ -53,6 +64,12 @@ export type DealUpdateInput = {
     askingPrice?: number | string | null;
     ourOffer?: number | string | null;
     agreedPrice?: number | string | null;
+    listPrice?: number | string | null;
+    acceptanceDate?: string | null; // ISO date (YYYY-MM-DD)
+    expirationDate?: string | null; // ISO date (YYYY-MM-DD)
+    termOfAgreement?: string | null;
+    amountOwed?: number | string | null;
+    weOwn?: boolean;
     agreementType?: string | null;
     source?: string | null;
     notes?: string | null;
@@ -108,6 +125,15 @@ export type EnsureTeamMemberInput = {
   email: string;
   name: string;
   picture: string;
+};
+
+// Payload for a manually-logged activity (call / note / email / meeting).
+// dealId is optional — a standalone note isn't required to attach to a deal,
+// but attaching one makes it appear in that deal's panel timeline.
+export type LogActivityInput = {
+  kind: ManualActivityKind;
+  body: string;
+  dealId?: string | null;
 };
 
 export type TemplateUpdateInput = Partial<{
@@ -212,11 +238,18 @@ export interface DataContextType {
   unassignTask: (taskId: string, memberId: string) => void;
 
   // ── Activity log ─────────────────────────────────────────
-  // Append-only stream of meaningful mutations, written automatically by the
-  // provider whenever a logged action runs. Read-only from consumers — there
-  // is no public mutator. In hosted mode this is a shared LiveList; in local
-  // single-user mode it stays an empty array.
+  // Append-only stream of meaningful events. Auto-logged system events (stage
+  // changes, task completions, doc generation) are written by the provider;
+  // manual entries (calls, notes, emails, meetings) are written via
+  // logActivity. In hosted mode this is a shared LiveList; in local mode it is
+  // persisted to localStorage so the timeline survives reloads.
   activities: ActivityEntry[];
+  // Log a manual activity (call / note / email / meeting). Optionally attach it
+  // to a deal so it shows in that deal's panel timeline.
+  logActivity: (input: LogActivityInput) => Promise<boolean>;
+  // Remove an activity entry (used for manually-logged entries the user wants
+  // to retract). Append-only system events generally aren't deleted by the UI.
+  deleteActivity: (id: string) => Promise<boolean>;
 
   // ── Undo ─────────────────────────────────────────────────
   // Tasks-only for now (Mālama parity covers tasks + investors; Centurion's

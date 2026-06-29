@@ -92,14 +92,43 @@ export function DealCreateModal({
             <Field span={3} label="Our offer">
               <Input name="ourOffer" type="number" min={0} placeholder="1750000" />
             </Field>
-            <Field span={3} label="Source">
-              <Input name="source" placeholder="Fast Track for Elite" />
+            <Field span={3} label="Purchase price">
+              <Input name="agreedPrice" type="number" min={0} placeholder="1650000" />
+            </Field>
+            <Field span={3} label="List price">
+              <Input name="listPrice" type="number" min={0} placeholder="1999000" />
             </Field>
           </Section>
 
           <hr className="border-[var(--color-border)]" />
 
+          <Section title="Deal terms">
+            <Field span={3} label="Acceptance date">
+              <Input name="acceptanceDate" type="date" />
+            </Field>
+            <Field span={3} label="Expiration date">
+              <Input name="expirationDate" type="date" />
+            </Field>
+            <Field span={2} label="Term of agreement">
+              <Input name="termOfAgreement" placeholder="30 days" />
+            </Field>
+            <Field span={2} label="Owed ($)">
+              <Input name="amountOwed" type="number" min={0} placeholder="0" />
+            </Field>
+            <div className="col-span-2 flex items-end pb-2">
+              <label className="flex items-center gap-2 text-sm text-[var(--color-text)] cursor-pointer select-none">
+                <input type="checkbox" name="weOwn" className="h-4 w-4 accent-[var(--color-accent)]" />
+                We own it
+              </label>
+            </div>
+          </Section>
+
+          <hr className="border-[var(--color-border)]" />
+
           <Section title="Notes">
+            <Field span={3} label="Source">
+              <Input name="source" placeholder="Fast Track for Elite" />
+            </Field>
             <Field span={6} label="Notes">
               <Textarea name="notes" rows={4} placeholder="Anything important about this lead..." />
             </Field>

@@ -16,6 +16,12 @@ export type TeamMember = {
 // self-contained (actor + entity info frozen at log time) so the rail still
 // renders correctly after the underlying user or entity is removed.
 export type ActivityKind =
+  // Manual, user-logged activities (the CRM "what happened on the call" stream).
+  | "note.logged"
+  | "call.logged"
+  | "email.logged"
+  | "meeting.logged"
+  // Auto-logged system events.
   | "task.added"
   | "task.completed"
   | "task.uncompleted"
@@ -35,6 +41,15 @@ export type ActivityKind =
   | "team.allowlistAdded"
   | "team.allowlistRemoved";
 
+// Manual activity kinds a user can log directly (subset of ActivityKind).
+export const MANUAL_ACTIVITY_KINDS = [
+  "note.logged",
+  "call.logged",
+  "email.logged",
+  "meeting.logged",
+] as const;
+export type ManualActivityKind = (typeof MANUAL_ACTIVITY_KINDS)[number];
+
 export type ActivityEntityType =
   | "deal"
   | "contact"
@@ -52,6 +67,8 @@ export type ActivityEntry = {
   actorPicture?: string;            // Google photo URL, frozen
   kind: ActivityKind;
   summary: string;                  // pre-rendered prose for the rail
+  body?: string;                    // free-text content for manual logs (note/call/email/meeting)
+  dealId?: string;                  // the deal this event belongs to — powers per-deal timelines
   entityType?: ActivityEntityType;
   entityId?: string;
   entityLabel?: string;             // frozen at log time
@@ -192,7 +209,9 @@ export const FIELD_PATHS = [
   { path: "deal.seller.email", label: "Seller email", format: "raw" as FormatterId },
   { path: "deal.seller.phone", label: "Seller phone", format: "phone" as FormatterId },
   // Realtor
-  { path: "deal.realtor.fullName", label: "Realtor name", format: "name-first-last" as FormatterId },
+  { path: "deal.realtor.firstName", label: "Realtor first name", format: "raw" as FormatterId },
+  { path: "deal.realtor.lastName", label: "Realtor last name", format: "raw" as FormatterId },
+  { path: "deal.realtor.fullName", label: "Realtor full name", format: "name-first-last" as FormatterId },
   { path: "deal.realtor.email", label: "Realtor email", format: "raw" as FormatterId },
   { path: "deal.realtor.phone", label: "Realtor phone", format: "phone" as FormatterId },
   // Meta

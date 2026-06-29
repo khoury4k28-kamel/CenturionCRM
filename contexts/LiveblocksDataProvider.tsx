@@ -37,6 +37,7 @@ import DataContext, {
   type TemplateCreateInput,
   type TemplateUpdateInput,
   type EnsureTeamMemberInput,
+  type LogActivityInput,
 } from "./DataContext";
 import {
   RoomProvider,
@@ -67,6 +68,7 @@ import {
   taskDisplayLabel,
   templateDisplayLabel,
   stageDisplay,
+  manualActivitySummary,
 } from "@/lib/activity-labels";
 import type {
   DealDTO,
@@ -92,6 +94,7 @@ import {
   MIME_PDF,
 } from "@/lib/template-engine/client/bytes";
 import type { DealWithRelations } from "@/lib/template-engine/fields";
+import { unlinkedContactWarning } from "@/lib/template-engine/binding-checks";
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
@@ -334,6 +337,8 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
   type PushActivityInput = {
     kind: ActivityKind;
     summary: string;
+    body?: string;
+    dealId?: string;
     entityType?: ActivityEntityType;
     entityId?: string;
     entityLabel?: string;
@@ -371,6 +376,8 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
         actorPicture: user.picture || undefined,
         kind: input.kind,
         summary: input.summary,
+        body: input.body,
+        dealId: input.dealId,
         entityType: input.entityType,
         entityId: input.entityId,
         entityLabel: input.entityLabel,
@@ -403,6 +410,57 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
       }
     },
     [pushActivityMut],
+  );
+
+  // Manual activity logging — calls/notes/emails/meetings the user records.
+  // Routes through the same append-only stream as auto events; the free-text
+  // body lives in `body` and the deal attachment in `dealId`.
+  const logActivity = useCallback(
+    async (input: LogActivityInput): Promise<boolean> => {
+      const body = input.body?.trim();
+      if (!body) {
+        toast.error("Write something to log");
+        return false;
+      }
+      const deal = input.dealId
+        ? deals.find((d) => d.id === input.dealId)
+        : null;
+      pushActivity({
+        kind: input.kind,
+        summary: manualActivitySummary(input.kind),
+        body,
+        dealId: input.dealId ?? undefined,
+        entityType: input.dealId ? "deal" : undefined,
+        entityId: input.dealId ?? undefined,
+        entityLabel: deal ? dealDisplayLabel(deal) : undefined,
+      });
+      return true;
+    },
+    [deals, pushActivity],
+  );
+
+  const deleteActivityMut = useLbMutation(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ({ storage }: any, id: string) => {
+      // Activity entries are plain objects (not LiveObjects), so match by .id
+      // rather than the LiveObject-aware findIndexById helper.
+      const list = getOrInitList(storage, "activities");
+      for (let i = 0; i < list.length; i++) {
+        if (list.get(i)?.id === id) {
+          list.delete(i);
+          break;
+        }
+      }
+    },
+    [],
+  ) as (id: string) => void;
+
+  const deleteActivity = useCallback(
+    async (id: string): Promise<boolean> => {
+      deleteActivityMut(id);
+      return true;
+    },
+    [deleteActivityMut],
   );
 
   // ── Refresh ───────────────────────────────────────────────────────
@@ -459,13 +517,15 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
         realtorId: null,
         askingPrice: nzNumber(input.askingPrice),
         ourOffer: nzNumber(input.ourOffer),
-        agreedPrice: null,
-        listPrice: null,
-        acceptanceDate: null,
-        expirationDate: null,
-        termOfAgreement: null,
-        amountOwed: null,
-        weOwn: false,
+        agreedPrice: nzNumber(input.agreedPrice),
+        listPrice: nzNumber(input.listPrice),
+        acceptanceDate: nz(input.acceptanceDate),
+        expirationDate: nz(input.expirationDate),
+        termOfAgreement: nz(input.termOfAgreement),
+        // "We own" and a dollar amount owed are mutually exclusive (matches the
+        // OWED cell semantics): if we own it, there's nothing owed.
+        amountOwed: input.weOwn ? null : nzNumber(input.amountOwed),
+        weOwn: !!input.weOwn,
         flaggedForReview: false,
         agreementType: null,
         source: nz(input.source),
@@ -477,6 +537,7 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
       pushActivity({
         kind: "deal.added",
         summary: `added deal ${dealDisplayLabel(deal)}`,
+        dealId: id,
         entityType: "deal",
         entityId: id,
         entityLabel: dealDisplayLabel(deal),
@@ -503,6 +564,15 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
       if (fields.askingPrice !== undefined) patch.askingPrice = nzNumber(fields.askingPrice);
       if (fields.ourOffer !== undefined) patch.ourOffer = nzNumber(fields.ourOffer);
       if (fields.agreedPrice !== undefined) patch.agreedPrice = nzNumber(fields.agreedPrice);
+      if (fields.listPrice !== undefined) patch.listPrice = nzNumber(fields.listPrice);
+      if (fields.acceptanceDate !== undefined) patch.acceptanceDate = nz(fields.acceptanceDate);
+      if (fields.expirationDate !== undefined) patch.expirationDate = nz(fields.expirationDate);
+      if (fields.termOfAgreement !== undefined) patch.termOfAgreement = nz(fields.termOfAgreement);
+      if (fields.weOwn !== undefined) patch.weOwn = !!fields.weOwn;
+      // "We own" clears any dollar amount owed (mutually exclusive, per OWED cell).
+      if (fields.amountOwed !== undefined) {
+        patch.amountOwed = fields.weOwn ? null : nzNumber(fields.amountOwed);
+      }
       if (fields.agreementType !== undefined) patch.agreementType = nz(fields.agreementType);
       if (fields.source !== undefined) patch.source = nz(fields.source);
       if (fields.notes !== undefined) patch.notes = nz(fields.notes);
@@ -565,6 +635,7 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
         pushActivity({
           kind: "deal.stageChanged",
           summary: `moved ${label} to ${stageDisplay(stage)}`,
+          dealId: id,
           entityType: "deal",
           entityId: id,
           entityLabel: label,
@@ -606,6 +677,7 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
       pushActivity({
         kind: "deal.deleted",
         summary: `deleted deal ${label}`,
+        dealId: id,
         entityType: "deal",
         entityId: id,
         entityLabel: label,
@@ -842,12 +914,17 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
 
   const addContact = useCallback(
     async (input: ContactCreateInput): Promise<string | null> => {
+      const firstName = nz(input.firstName);
+      if (!firstName) {
+        toast.error("First name required");
+        return null;
+      }
       const id = uid();
       const now = nowIso();
       const contact: ContactDTO = {
         id,
         type: input.type,
-        firstName: input.firstName,
+        firstName,
         lastName: input.lastName ?? null,
         email: input.email ?? null,
         phone: input.phone ?? null,
@@ -895,6 +972,20 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
       const list = storage.get("contacts");
       const i = findIndexById(list, id);
       if (i >= 0) list.delete(i);
+
+      // Manual cascade: deals reference this contact via sellerId/realtorId.
+      // Clear those dangling references so a deal never points at a contact that
+      // no longer exists (which would silently drop its seller/realtor display).
+      const dList = storage.get("deals");
+      for (let j = 0; j < dList.length; j++) {
+        const deal = dList.get(j);
+        const patch: { sellerId?: null; realtorId?: null; updatedAt?: string } = {};
+        if (deal.get("sellerId") === id) patch.sellerId = null;
+        if (deal.get("realtorId") === id) patch.realtorId = null;
+        if (patch.sellerId === null || patch.realtorId === null) {
+          deal.update({ ...patch, updatedAt: nowIso() });
+        }
+      }
     },
     [],
   ) as (id: string) => void;
@@ -946,6 +1037,7 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
       pushActivity({
         kind: "task.added",
         summary: `added task “${label}”`,
+        dealId: task.dealId ?? undefined,
         entityType: "task",
         entityId: id,
         entityLabel: label,
@@ -1002,6 +1094,7 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
           pushActivity({
             kind: "task.completed",
             summary: `completed task “${label}”`,
+            dealId: prev.dealId ?? undefined,
             entityType: "task",
             entityId: id,
             entityLabel: label,
@@ -1011,6 +1104,7 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
           pushActivity({
             kind: "task.uncompleted",
             summary: `reopened task “${label}”`,
+            dealId: prev.dealId ?? undefined,
             entityType: "task",
             entityId: id,
             entityLabel: label,
@@ -1040,6 +1134,7 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
       pushActivity({
         kind: "task.deleted",
         summary: `deleted task “${label}”`,
+        dealId: prev?.dealId ?? undefined,
         entityType: "task",
         entityId: id,
         entityLabel: label,
@@ -1245,6 +1340,7 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
         pushActivity({
           kind: "task.assigned",
           summary: `assigned ${member.name} to “${taskLabel}”`,
+          dealId: prevTask.dealId ?? undefined,
           entityType: "task",
           entityId: taskId,
           entityLabel: taskLabel,
@@ -1283,6 +1379,7 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
         pushActivity({
           kind: "task.unassigned",
           summary: `unassigned ${member.name} from “${taskLabel}”`,
+          dealId: prevTask.dealId ?? undefined,
           entityType: "task",
           entityId: taskId,
           entityLabel: taskLabel,
@@ -1466,6 +1563,14 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
       const realtor = deal.realtorId
         ? contacts.find((c) => c.id === deal.realtorId)
         : null;
+
+      // Warn before generating if the template binds seller/realtor fields the
+      // deal doesn't have linked — those values would otherwise render blank.
+      const warning = unlinkedContactWarning(template.bindings, {
+        hasSeller: !!seller,
+        hasRealtor: !!realtor,
+      });
+      if (warning && !confirm(warning)) return false;
       const dealForResolver: DealWithRelations = {
         askingPrice: deal.askingPrice,
         ourOffer: deal.ourOffer,
@@ -1547,6 +1652,7 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
         pushActivity({
           kind: "document.generated",
           summary: `generated ${templateLabel} for ${dealLabel}`,
+          dealId,
           entityType: "document",
           entityId: id,
           // Store the deal id as the label-supplemental hop so row clicks can
@@ -1655,6 +1761,8 @@ function LiveblocksDataProviderInner({ children }: { children: ReactNode }) {
     assignTask,
     unassignTask,
     activities,
+    logActivity,
+    deleteActivity,
     undo,
     canUndo: canUndoState,
   };

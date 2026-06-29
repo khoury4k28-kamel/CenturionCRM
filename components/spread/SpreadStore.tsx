@@ -366,11 +366,47 @@ export function SpreadStore({
   // SpreadStore is now mode-agnostic. The provider already toasts on its own
   // failures, so fireSave below only needs to handle the rollback/status dance.
   const {
+    deals,
     updateSpreadField,
     setDealFlag,
     setDealOwed,
     updateDealAddress,
   } = useData();
+
+  // Resolve a row's current values: prefer the local undo-mirror, but fall back
+  // to the live provider deal when the mirror doesn't have it (e.g. a deal opened
+  // by deep link that isn't in the pipeline's initialRows — CLOSED/DEAD, or added
+  // after mount). Without this, commits on such rows silently no-op and the edit
+  // is lost. The table renders from the live provider, so a missing mirror row is
+  // purely an undo-bookkeeping concern.
+  const resolveRow = useCallback(
+    (dealId: string): SpreadDeal | undefined => {
+      const mirror = stateRef.current.rows[dealId];
+      if (mirror) return mirror;
+      const d = deals.find((x) => x.id === dealId);
+      if (!d) return undefined;
+      return {
+        id: d.id,
+        stage: d.stage,
+        agreedPrice: d.agreedPrice,
+        listPrice: d.listPrice,
+        acceptanceDate: d.acceptanceDate,
+        expirationDate: d.expirationDate,
+        termOfAgreement: d.termOfAgreement,
+        amountOwed: d.amountOwed,
+        weOwn: d.weOwn,
+        flaggedForReview: d.flaggedForReview,
+        notes: d.notes,
+        property: {
+          address: d.property.address,
+          city: d.property.city,
+          state: d.property.state,
+          zip: d.property.zip,
+        },
+      };
+    },
+    [deals],
+  );
 
   // ─── Status indicator lifecycle ──────────────────────────────────────
   // After a successful save, hold "saved" for 800ms then return to "idle".
@@ -497,7 +533,7 @@ export function SpreadStore({
 
   const commitField = useCallback<Actions["commitField"]>(
     (dealId, field, nextValueRaw) => {
-      const row = stateRef.current.rows[dealId];
+      const row = resolveRow(dealId);
       if (!row) return;
 
       // Parse + normalize the next value based on field type so prev === next compare works.
@@ -563,12 +599,12 @@ export function SpreadStore({
         }
       });
     },
-    [fireSave],
+    [fireSave, resolveRow],
   );
 
   const commitAddress = useCallback<Actions["commitAddress"]>(
     (dealId, next) => {
-      const row = stateRef.current.rows[dealId];
+      const row = resolveRow(dealId);
       if (!row) return;
       const prev: AddressBundle = {
         address: row.property.address,
@@ -588,12 +624,12 @@ export function SpreadStore({
       dispatch({ type: "APPLY", op });
       void fireSave(op, { kind: "address", ...next }, "apply");
     },
-    [fireSave],
+    [fireSave, resolveRow],
   );
 
   const commitOwed = useCallback<Actions["commitOwed"]>(
     (dealId, raw) => {
-      const row = stateRef.current.rows[dealId];
+      const row = resolveRow(dealId);
       if (!row) return;
       // Parse the raw string the same way `setOwed` does on the server, so we can compare
       // and (more importantly) capture the next bundle for the undo stack.
@@ -618,12 +654,12 @@ export function SpreadStore({
       dispatch({ type: "APPLY", op });
       void fireSave(op, { kind: "owed", raw }, "apply");
     },
-    [fireSave],
+    [fireSave, resolveRow],
   );
 
   const commitFlag = useCallback<Actions["commitFlag"]>(
     (dealId, flagged) => {
-      const row = stateRef.current.rows[dealId];
+      const row = resolveRow(dealId);
       if (!row) return;
       if (row.flaggedForReview === flagged) return;
       const op: Op = {
@@ -636,7 +672,7 @@ export function SpreadStore({
       dispatch({ type: "APPLY", op });
       void fireSave(op, { kind: "setFlag", flagged }, "apply");
     },
-    [fireSave],
+    [fireSave, resolveRow],
   );
 
   // ─── Undo / Redo ──────────────────────────────────────────────────────

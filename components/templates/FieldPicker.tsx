@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Input, Label, Select } from "@/components/ui/input";
+import { Label, Select } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { FIELD_PATHS, type Binding, type FormatterId } from "@/lib/types";
 import { pathToToken } from "@/lib/template-engine/fields";
@@ -18,6 +18,29 @@ const FORMATTERS: { id: FormatterId; label: string }[] = [
   { id: "address-single", label: "Address (single line)" },
   { id: "address-multiline", label: "Address (multi-line)" },
 ];
+
+// Group the flat FIELD_PATHS list by data source so the picker makes the
+// deal → property → contact linkage explicit while binding. Each field path
+// belongs to exactly one group (first match wins, in this order).
+const FIELD_GROUPS: { label: string; match: (path: string) => boolean }[] = [
+  {
+    label: "Deal",
+    match: (p) =>
+      p.startsWith("deal.") &&
+      !p.startsWith("deal.property.") &&
+      !p.startsWith("deal.seller.") &&
+      !p.startsWith("deal.realtor."),
+  },
+  { label: "Property (site)", match: (p) => p.startsWith("deal.property.") },
+  { label: "Seller (contact)", match: (p) => p.startsWith("deal.seller.") },
+  { label: "Realtor (contact)", match: (p) => p.startsWith("deal.realtor.") },
+  { label: "Date", match: (p) => p === "today" },
+];
+
+const GROUPED_FIELDS = FIELD_GROUPS.map((g) => ({
+  label: g.label,
+  fields: FIELD_PATHS.filter((f) => g.match(f.path)),
+})).filter((g) => g.fields.length > 0);
 
 type Props = {
   selectedText: string;
@@ -58,10 +81,14 @@ export function FieldPicker({ selectedText, pdfBox, onAdd, onCancel }: Props) {
       <div>
         <Label>Bind to field</Label>
         <Select value={fieldPath} onChange={(e) => handlePathChange(e.target.value)}>
-          {FIELD_PATHS.map((f) => (
-            <option key={f.path} value={f.path}>
-              {f.label}
-            </option>
+          {GROUPED_FIELDS.map((group) => (
+            <optgroup key={group.label} label={group.label}>
+              {group.fields.map((f) => (
+                <option key={f.path} value={f.path}>
+                  {f.label}
+                </option>
+              ))}
+            </optgroup>
           ))}
         </Select>
       </div>

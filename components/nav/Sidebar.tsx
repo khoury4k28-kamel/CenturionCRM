@@ -7,7 +7,7 @@ import {
   Table,
   Users,
   FileText,
-  CheckSquare,
+  Activity,
   Inbox,
   Plus,
 } from "lucide-react";
@@ -24,7 +24,7 @@ const items = [
   { href: "/deals", label: "Pipeline", icon: Table },
   { href: "/contacts", label: "Contacts", icon: Users },
   { href: "/templates", label: "Templates", icon: FileText },
-  { href: "/tasks", label: "Tasks", icon: CheckSquare },
+  { href: "/tasks", label: "Activity & Tasks", icon: Activity },
   { href: "/inbox", label: "Inbox", icon: Inbox },
 ];
 

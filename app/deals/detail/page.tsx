@@ -225,7 +225,7 @@ function DealDetailInner() {
                       defaultValue={deal.ourOffer ?? ""}
                     />
                   </Field>
-                  <Field span={2} label="Agreed price">
+                  <Field span={2} label="Purchase price">
                     <Input
                       name="agreedPrice"
                       type="number"
@@ -233,16 +233,69 @@ function DealDetailInner() {
                       defaultValue={deal.agreedPrice ?? ""}
                     />
                   </Field>
-                  <Field span={3} label="Agreement type">
+                  <Field span={2} label="List price">
+                    <Input
+                      name="listPrice"
+                      type="number"
+                      min={0}
+                      defaultValue={deal.listPrice ?? ""}
+                    />
+                  </Field>
+                  <Field span={2} label="Agreement type">
                     <Select name="agreementType" defaultValue={deal.agreementType ?? ""}>
                       <option value="">—</option>
                       <option value="PURCHASE">Purchase</option>
                       <option value="OPTION">Option</option>
                     </Select>
                   </Field>
-                  <Field span={3} label="Lead source">
+                  <Field span={2} label="Lead source">
                     <Input name="source" defaultValue={deal.source ?? ""} />
                   </Field>
+                </Section>
+
+                <hr className="border-[var(--color-border)]" />
+
+                <Section title="Deal terms">
+                  <Field span={2} label="Acceptance date">
+                    <Input
+                      name="acceptanceDate"
+                      type="date"
+                      defaultValue={deal.acceptanceDate ?? ""}
+                    />
+                  </Field>
+                  <Field span={2} label="Expiration date">
+                    <Input
+                      name="expirationDate"
+                      type="date"
+                      defaultValue={deal.expirationDate ?? ""}
+                    />
+                  </Field>
+                  <Field span={2} label="Term of agreement">
+                    <Input
+                      name="termOfAgreement"
+                      defaultValue={deal.termOfAgreement ?? ""}
+                      placeholder="30 days"
+                    />
+                  </Field>
+                  <Field span={2} label="Owed ($)">
+                    <Input
+                      name="amountOwed"
+                      type="number"
+                      min={0}
+                      defaultValue={deal.amountOwed ?? ""}
+                    />
+                  </Field>
+                  <div className="col-span-2 flex items-end pb-2">
+                    <label className="flex items-center gap-2 text-sm text-[var(--color-text)] cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        name="weOwn"
+                        defaultChecked={deal.weOwn}
+                        className="h-4 w-4 accent-[var(--color-accent)]"
+                      />
+                      We own it
+                    </label>
+                  </div>
                 </Section>
 
                 <hr className="border-[var(--color-border)]" />

@@ -17,6 +17,7 @@ import {
   FileText,
   Mail,
   Plus,
+  Phone,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -33,8 +34,12 @@ import { useSpreadActions } from "@/components/spread/SpreadStore";
 import type { AddressBundle } from "@/components/spread/SpreadStore";
 import { StageStepper } from "./StageStepper";
 import { TaskList } from "@/components/tasks/TaskList";
+import { ActivityFeed } from "@/components/activity/ActivityFeed";
+import { LogActivityForm } from "@/components/activity/LogActivityForm";
+import { TemplatePickerList } from "@/components/documents/TemplatePickerList";
 import { Badge } from "@/components/ui/badge";
 import { AGREEMENT_TYPES, DEAL_STAGES, type DealStage } from "@/lib/types";
+import type { ContactDTO } from "@/lib/dto";
 
 // Tabbed deal slide-out. The Overview tab carries forward the inline-edit
 // fields that were previously the entire panel; Tasks / Documents / Emails
@@ -51,7 +56,7 @@ import { AGREEMENT_TYPES, DEAL_STAGES, type DealStage } from "@/lib/types";
 //   - "We own" toggle reuses `commitOwed("we own" | "-0-")` to keep SpreadStore
 //     in sync without adding a new SpreadStore action.
 
-type DealPanelTab = "overview" | "tasks" | "documents" | "emails";
+type DealPanelTab = "overview" | "activity" | "tasks" | "documents" | "emails";
 
 export function DealDetailPanel({
   dealId,
@@ -60,7 +65,16 @@ export function DealDetailPanel({
   dealId: string | null;
   onClose: () => void;
 }) {
-  const { deals, contacts, tasks, documents, updateDeal, deleteDeal } = useData();
+  const {
+    deals,
+    contacts,
+    tasks,
+    documents,
+    activities,
+    updateDeal,
+    deleteDeal,
+    deleteActivity,
+  } = useData();
   const spread = useSpreadActions();
   const [deletePending, startDelete] = useTransition();
   // Reset to Overview whenever the user opens a different deal — otherwise
@@ -110,6 +124,15 @@ export function DealDetailPanel({
     [documents, deal],
   );
 
+  const sellerContact = useMemo(
+    () => (deal?.sellerId ? contacts.find((c) => c.id === deal.sellerId) ?? null : null),
+    [contacts, deal],
+  );
+  const realtorContact = useMemo(
+    () => (deal?.realtorId ? contacts.find((c) => c.id === deal.realtorId) ?? null : null),
+    [contacts, deal],
+  );
+
   if (!dealId || !deal) return null;
 
   // Pin a non-null reference for the closures below. TS doesn't narrow
@@ -129,6 +152,7 @@ export function DealDetailPanel({
     .join(", ");
 
   const openTaskCount = dealTasks.filter((t) => !t.completedAt).length;
+  const dealActivityCount = activities.filter((a) => a.dealId === d.id).length;
 
   // ── Address commit helper ────────────────────────────────────────────
   // Address is a 4-field bundle in SpreadStore. Each input commits the full
@@ -149,6 +173,15 @@ export function DealDetailPanel({
   // provider's own toast.
   function setFields(fields: Parameters<typeof updateDeal>[1]["fields"]): void {
     void updateDeal(d.id, { fields });
+  }
+
+  // Property characteristics (BR/BA/sqft/lot/year/APN) aren't tracked by the
+  // SpreadStore, so they go straight to the provider as a property patch. The
+  // provider coerces the string inputs to the right numeric types.
+  function commitProperty(
+    patch: Omit<NonNullable<Parameters<typeof updateDeal>[1]["property"]>, "id">,
+  ): void {
+    void updateDeal(d.id, { property: { id: d.property.id, ...patch } });
   }
 
   function handleDelete() {
@@ -190,6 +223,13 @@ export function DealDetailPanel({
         <div className="px-2 flex items-center gap-0 border-t border-[var(--color-panel-border)]">
           <TabButton active={tab === "overview"} onClick={() => setTab("overview")}>
             Overview
+          </TabButton>
+          <TabButton
+            active={tab === "activity"}
+            onClick={() => setTab("activity")}
+            badge={dealActivityCount > 0 ? dealActivityCount : undefined}
+          >
+            Activity
           </TabButton>
           <TabButton
             active={tab === "tasks"}
@@ -257,7 +297,7 @@ export function DealDetailPanel({
                 onCommit={(n) => setFields({ ourOffer: n })}
               />
               <MoneyField
-                label="Agreed"
+                label="Purchase"
                 value={deal.agreedPrice}
                 accent
                 onCommit={(n) => spread.commitField(deal.id, "agreedPrice", n)}
@@ -317,6 +357,65 @@ export function DealDetailPanel({
             </div>
           </Section>
 
+          <Section label="Property details">
+            <div className="grid grid-cols-6 gap-3">
+              <div className="col-span-1">
+                <Label>BR</Label>
+                <TextLine
+                  value={deal.property.bedrooms === null ? "" : String(deal.property.bedrooms)}
+                  onCommit={(v) => commitProperty({ bedrooms: v })}
+                  placeholder="—"
+                  className={inputCls("text-center tabular-nums")}
+                />
+              </div>
+              <div className="col-span-1">
+                <Label>BA</Label>
+                <TextLine
+                  value={deal.property.bathrooms === null ? "" : String(deal.property.bathrooms)}
+                  onCommit={(v) => commitProperty({ bathrooms: v })}
+                  placeholder="—"
+                  className={inputCls("text-center tabular-nums")}
+                />
+              </div>
+              <div className="col-span-2">
+                <Label>Sq ft</Label>
+                <TextLine
+                  value={deal.property.sqft === null ? "" : String(deal.property.sqft)}
+                  onCommit={(v) => commitProperty({ sqft: v })}
+                  placeholder="—"
+                  className={inputCls("tabular-nums")}
+                />
+              </div>
+              <div className="col-span-2">
+                <Label>Lot (sqft)</Label>
+                <TextLine
+                  value={deal.property.lotSize === null ? "" : String(deal.property.lotSize)}
+                  onCommit={(v) => commitProperty({ lotSize: v })}
+                  placeholder="—"
+                  className={inputCls("tabular-nums")}
+                />
+              </div>
+              <div className="col-span-2">
+                <Label>Year built</Label>
+                <TextLine
+                  value={deal.property.yearBuilt === null ? "" : String(deal.property.yearBuilt)}
+                  onCommit={(v) => commitProperty({ yearBuilt: v })}
+                  placeholder="—"
+                  className={inputCls("tabular-nums")}
+                />
+              </div>
+              <div className="col-span-4">
+                <Label>APN (tax parcel #)</Label>
+                <TextLine
+                  value={deal.property.apn ?? ""}
+                  onCommit={(v) => commitProperty({ apn: v })}
+                  placeholder="—"
+                  className={inputCls("font-mono")}
+                />
+              </div>
+            </div>
+          </Section>
+
           <Section label="Contacts">
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -335,6 +434,7 @@ export function DealDetailPanel({
                       </option>
                     ))}
                 </select>
+                {sellerContact ? <ContactMini contact={sellerContact} /> : null}
               </div>
               <div>
                 <Label>Realtor</Label>
@@ -352,6 +452,7 @@ export function DealDetailPanel({
                       </option>
                     ))}
                 </select>
+                {realtorContact ? <ContactMini contact={realtorContact} /> : null}
               </div>
             </div>
           </Section>
@@ -449,6 +550,19 @@ export function DealDetailPanel({
         </>
       ) : null}
 
+      {tab === "activity" ? (
+        <Section>
+          <LogActivityForm dealId={deal.id} className="mb-3" />
+          <ActivityFeed
+            entries={activities}
+            dealId={deal.id}
+            linkEntities={false}
+            onDelete={(id) => void deleteActivity(id)}
+            emptyHint="No activity yet — log your first call or note above."
+          />
+        </Section>
+      ) : null}
+
       {tab === "tasks" ? (
         <Section>
           <TaskList tasks={dealTasks} dealId={deal.id} allowAdd emptyHint="No tasks yet. Add one below." />
@@ -457,31 +571,22 @@ export function DealDetailPanel({
 
       {tab === "documents" ? (
         <Section>
-          <div className="flex items-center justify-between mb-3">
-            <div className="text-[11px] text-[var(--color-text-muted)]">
-              {dealDocuments.length === 0
-                ? "Generate from a template to attach the first document."
-                : `${dealDocuments.length} document${dealDocuments.length === 1 ? "" : "s"} linked to this deal.`}
-            </div>
-            <Link
-              href={`/deals/documents/new?dealId=${deal.id}`}
-              className="inline-flex items-center gap-1 px-2 h-7 rounded-md text-xs font-medium border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-bg-hover)]"
-            >
-              <Plus size={12} strokeWidth={2} />
-              Generate
-            </Link>
+          <div className="text-[11px] text-[var(--color-text-muted)] mb-3">
+            {dealDocuments.length === 0
+              ? "Generate from a template below to attach the first document."
+              : `${dealDocuments.length} document${dealDocuments.length === 1 ? "" : "s"} linked to this deal.`}
           </div>
-          {dealDocuments.length === 0 ? (
-            <div className="py-6 text-center text-xs text-[var(--color-text-faint)]">
-              No documents yet.
-            </div>
-          ) : (
-            <ul className="space-y-1">
+          {dealDocuments.length > 0 ? (
+            <ul className="space-y-1 mb-5">
               {dealDocuments.map((doc) => (
                 <DocumentRow key={doc.id} doc={doc} dealId={deal.id} />
               ))}
             </ul>
-          )}
+          ) : null}
+          <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] font-semibold mb-2">
+            Generate from template
+          </div>
+          <TemplatePickerList dealId={deal.id} compact />
         </Section>
       ) : null}
 
@@ -634,6 +739,43 @@ function EmailsStub() {
         <Plus size={12} strokeWidth={2} />
         Compose draft
       </button>
+    </div>
+  );
+}
+
+// ─── Contact quick-view ─────────────────────────────────────────────────
+// Compact card under a seller/realtor selector — keeps Greg one tap from
+// calling or emailing the contact without leaving the panel.
+
+function ContactMini({ contact }: { contact: ContactDTO }) {
+  const name = `${contact.firstName} ${contact.lastName ?? ""}`.trim();
+  return (
+    <div className="mt-2 rounded-md border border-[var(--color-panel-border)] bg-[var(--color-bg-elevated)] px-2.5 py-2 space-y-1">
+      <div className="text-xs font-medium text-[var(--color-text)] truncate">{name || "Unnamed contact"}</div>
+      {contact.phone ? (
+        <a
+          href={`tel:${contact.phone}`}
+          className="flex items-center gap-1.5 text-[11px] text-[var(--color-accent)] hover:underline font-mono"
+        >
+          <Phone size={11} strokeWidth={2} className="shrink-0" />
+          {contact.phone}
+        </a>
+      ) : null}
+      {contact.email ? (
+        <a
+          href={`mailto:${contact.email}`}
+          className="flex items-center gap-1.5 text-[11px] text-[var(--color-accent)] hover:underline truncate"
+        >
+          <Mail size={11} strokeWidth={2} className="shrink-0" />
+          <span className="truncate">{contact.email}</span>
+        </a>
+      ) : null}
+      <Link
+        href={`/contacts/detail?id=${contact.id}`}
+        className="inline-block text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:underline"
+      >
+        Open contact →
+      </Link>
     </div>
   );
 }

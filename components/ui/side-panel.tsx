@@ -15,7 +15,7 @@ export function SidePanel({
   open,
   onOpenChange,
   children,
-  widthClassName = "sm:w-[440px]",
+  widthClassName = "sm:w-[500px]",
   className,
 }: {
   open: boolean;

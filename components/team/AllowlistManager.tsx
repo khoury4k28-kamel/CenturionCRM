@@ -4,7 +4,8 @@
 // LiveList in Liveblocks storage — changes propagate to every connected client
 // instantly. Triggered from the "+" button in TeamDock.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import { X, Trash2 } from "lucide-react";
 import { useData } from "@/contexts/DataContext";
@@ -18,6 +19,16 @@ export default function AllowlistManager({ onClose }: { onClose: () => void }) {
     removeTeamMember,
   } = useData();
   const [newEmail, setNewEmail] = useState("");
+
+  // This modal is rendered from inside the Sidebar's <aside>, which is a
+  // `position: sticky` element and therefore its own stacking context. Without
+  // a portal, the backdrop below is trapped at the sidebar's (z-auto) level and
+  // paints *under* the sticky table header (z-20) and the top-right pill
+  // (z-40), leaving them un-dimmed. Portaling to <body> puts the overlay back
+  // in the root stacking context where its z-50 covers everything. Mirrors the
+  // pattern in components/ui/dialog.tsx; `mounted` guards SSR (no `document`).
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   function onAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -46,7 +57,9 @@ export default function AllowlistManager({ onClose }: { onClose: () => void }) {
     toast.success(`Revoked access for ${email}`);
   }
 
-  return (
+  if (!mounted) return null;
+
+  return createPortal(
     <div
       className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center px-4"
       onClick={onClose}
@@ -121,6 +134,7 @@ export default function AllowlistManager({ onClose }: { onClose: () => void }) {
           The owner account is always allowed and isn&apos;t shown here.
         </p>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

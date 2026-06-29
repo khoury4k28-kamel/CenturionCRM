@@ -6,8 +6,25 @@
 // row should never render with a raw UUID or "null".
 
 import { DEAL_STAGE_LABELS, CONTACT_TYPE_LABELS } from "./types";
-import type { DealStage, ContactType } from "./types";
+import type { DealStage, ContactType, ActivityKind } from "./types";
 import type { DealDTO, ContactDTO, TaskDTO, TemplateDTO } from "./dto";
+
+// One-line prose for a manually-logged activity (call / note / email / meeting).
+// The free-text body is rendered separately under this summary in the feed.
+export function manualActivitySummary(kind: ActivityKind): string {
+  switch (kind) {
+    case "call.logged":
+      return "logged a call";
+    case "note.logged":
+      return "added a note";
+    case "email.logged":
+      return "logged an email";
+    case "meeting.logged":
+      return "logged a meeting";
+    default:
+      return "logged activity";
+  }
+}
 
 export function dealDisplayLabel(deal: Pick<DealDTO, "property"> | null | undefined): string {
   if (!deal) return "untitled deal";
